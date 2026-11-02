@@ -31,6 +31,34 @@ This test reads the ADC from the main loop, which is fine for checking it. The f
 4. Press **F8** to load the code.
 5. Press **RESET** on the board.
 
+## How to play sound into the board
+
+**Stage 2 makes no sound.** The speaker stays silent, because audio only goes in. You'll see it working when the numbers on the screen change.
+
+Audio goes into the **J1302 audio jack** through a 3.5 mm cable.
+
+### Using a phone or laptop
+
+1. Set the volume to the **lowest step**.
+2. Plug a 3.5 mm cable into the headphone output and into J1302. Phones without a headphone jack need a wired adapter. Bluetooth won't work.
+3. Open a tone generator app or website, and pick a **1000 Hz sine** wave.
+4. Press play and raise the volume slowly.
+5. Stop when `SWING (code)` reaches about 1000 to 2000.
+
+If `MIN` reaches 0 or `MAX` reaches 4095, it's too loud, so turn it down. Music works too, but the numbers will jump around. A steady tone gives steady readings.
+
+### Using a signal generator
+
+| Setting | Value |
+|---|---|
+| Waveform | Sine |
+| Frequency | 1 kHz |
+| Amplitude | 100 mVpp |
+| Offset | 0 V |
+| Output load | High-Z |
+
+Use a BNC to 3.5 mm cable, or connect the signal to the plug's tip and ground to its sleeve. This is the better option for testing, because you know the exact level going in.
+
 ## Check it worked
 
 The screen updates twice a second, and LED0 should still flash 60 times a minute. If you haven't finished the Stage 1 check, this also covers it.
@@ -47,7 +75,7 @@ The screen updates twice a second, and LED0 should still flash 60 times a minute
 
 ### Test 2: play a tone
 
-Use a 1 kHz sine at 100 mVpp.
+Use a 1 kHz sine at 100 mVpp. On a phone, you can't set an exact level, so just check that the swing goes up and down with the volume.
 
 | Screen line | Expected |
 |---|---|
@@ -70,6 +98,55 @@ Probe PF8 (J1101 pin 3) with ground on pin 2. PF8 is high during each conversion
 - Silence reads about 2048
 - The swing follows the tone's level
 - LED0 flashes 60 times a minute
+
+## What the numbers mean
+
+For half a second, the code reads the ADC over and over and keeps track of the results. It then shows these values and starts again.
+
+A **code** is the raw ADC number from 0 to 4095. One code is about 0.8 mV.
+
+| Screen line | What it means | How it's calculated |
+|---|---|---|
+| `SYSCLK (Hz)` | CPU speed the registers report | Read from the clock settings |
+| `MIN (code)` | Lowest reading in that half second | Each reading is compared with the lowest so far |
+| `MAX (code)` | Highest reading in that half second | Each reading is compared with the highest so far |
+| `SWING (code)` | How big the signal is, from bottom to top | `MAX − MIN` |
+| `AVERAGE (code)` | The signal's centre | All readings added up ÷ `CONVERSIONS` |
+| `AVERAGE (mV)` | The same centre, in millivolts | `AVERAGE × 3300 ÷ 4095` |
+| `SWING (mV)` | Signal size at PA3, in millivolts | `SWING × 3300 ÷ 4095` |
+| `CONV CYCLES` | CPU cycles the latest reading took | Cycle counter after − before |
+| `CONVERSIONS` | Readings taken in that half second | Adds 1 per reading |
+
+The division drops any decimals, so 2047.9 shows as 2047.
+
+### Worked example
+
+Play a 100 mVpp tone into the jack.
+
+| Step | Calculation | Result |
+|---|---|---|
+| The board amplifies it | 100 mV × 11 | 1100 mV swing at PA3 |
+| It sits around the 1650 mV centre | 1650 − 550 and 1650 + 550 | From 1100 mV to 2200 mV |
+| Lowest reading | 1100 ÷ 3300 × 4095 | `MIN` = 1365 |
+| Highest reading | 2200 ÷ 3300 × 4095 | `MAX` = 2730 |
+| Swing | 2730 − 1365 | `SWING` = 1365 |
+| Average | The tone goes equally above and below centre | `AVERAGE` = about 2048 |
+| Back to millivolts | 1365 × 3300 ÷ 4095 | `SWING (mV)` = 1100 |
+
+Noise makes real readings slightly different from these.
+
+### Handy calculations
+
+- **Level at the jack:** `SWING (mV) ÷ 11`. This tells you how loud your phone really is.
+- **Tone size without the noise:** tone `SWING` minus silent `SWING`, roughly.
+- **Readings per second:** `CONVERSIONS × 2`.
+- **Cycles per loop:** `36,000,000 ÷ CONVERSIONS`, since half a second is 36 million cycles at 72 MHz.
+
+### What `CONV CYCLES` should be
+
+The ADC itself takes 120 cycles: (7.5 + 12.5) ADC clocks × 6 CPU cycles each. The reading is a bit higher because it also includes the start delay and the instructions around the conversion.
+
+`CONVERSIONS` is lower than a pure ADC rate because each loop also spends time updating `MIN`, `MAX` and the total.
 
 ## If something's wrong
 
