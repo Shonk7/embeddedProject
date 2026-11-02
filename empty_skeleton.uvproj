@@ -414,6 +414,16 @@
               <FilePath>.\sources\debug.h</FilePath>
             </File>
             <File>
+              <FileName>adc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\adc.c</FilePath>
+            </File>
+            <File>
+              <FileName>adc.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\adc.h</FilePath>
+            </File>
+            <File>
               <FileName>startup_stm32f10x_hd.s</FileName>
               <FileType>2</FileType>
               <FilePath>.\Sources\startup_stm32f10x_hd.s</FilePath>

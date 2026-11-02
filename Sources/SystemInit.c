@@ -29,13 +29,9 @@ static int wait_for(__IO uint32_t *reg, uint32_t mask, uint32_t value) {
 	return 0;
 }
 
-// Called by Reset_Handler BEFORE __main, so .data has not been copied and .bss
-// has not been zeroed yet. Anything written to a global here gets overwritten,
-// so this only touches hardware. main() calls SystemCoreClockUpdate() instead.
+// Called by Reset_Handler BEFORE __main, 
 void SystemInit(void) {
-	// Wait states go up before the clock does. Flash needs 2 above 48 MHz
-	// (RM0008 3.3.3). FLASH_ACR_LATENCY_2 is NOT what we want here: in this
-	// header it is bit 2, which would mean LATENCY = 4, a reserved value
+	// Wait states go up before the clock does. Flash needs to wait 2 cycles 
 	FLASH->ACR = FLASH_ACR_PRFTBE | (2U << FLASH_ACR_LATENCY_Pos);
 
 	// Get to a known state. A debugger reset can land here with the PLL still
