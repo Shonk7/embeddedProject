@@ -1,0 +1,23 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Project:</h2>
+C:\Users\Joe Li\Downloads\D2000_Empty\D2000_Empty\Empty_Skeleton\empty_skeleton.uvproj
+Project File Date:  07/12/2026
+
+<h2>Output:</h2>
+Load "C:\\Users\\Joe Li\\Downloads\\D2000_Empty\\D2000_Empty\\Empty_Skeleton\\empty_skeleton.AXF" 
+_____^
+*** error 56: cannot open file
+Rebuild target 'Target 1'
+compiling main.c...
+compiling SystemInit.c...
+compiling font5x7.c...
+compiling lcd_grph.c...
+compiling lcd_hw.c...
+compiling lcd_ili9341.c...
+linking...
+empty_skeleton.axf: Error: L6320W: Ignoring --entry command. Cannot find argument 'Reset_Handler'.
+empty_skeleton.axf: Warning: L6320W: Ignoring --first command. Cannot find argument '__Vectors'.
+Target not created
