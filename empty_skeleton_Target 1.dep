@@ -1,6 +1,6 @@
 Dependencies for Project 'empty_skeleton', Target 'Target 1': (DO NOT MODIFY !)
 CompilerVersion: 6240000::V6.24::ARMCLANG
-F (.\sources\main.c)(0x6AE92852)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./main.o -MMD)
+F (.\sources\main.c)(0x6AE932DE)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./main.o -MMD)
 I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
 I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
 I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
@@ -12,6 +12,8 @@ I (sources\..\LCD\lcd_grph.h)(0x6AE9253B)
 I (sources\clock.h)(0x6AE9253B)
 I (sources\debug.h)(0x6AE9253B)
 I (sources\tests.h)(0x6AE9253B)
+I (sources\rate_ctrl.h)(0x6AE932A5)
+I (sources\ui.h)(0x6AE932DE)
 F (.\sources\SystemInit.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./systeminit.o -MMD)
 I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
 I (sources\..\Headers\core_cm3.h)(0x6AE9253B)

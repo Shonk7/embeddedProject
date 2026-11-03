@@ -112,7 +112,7 @@
           <SimDllName>SARMCM3.DLL</SimDllName>
           <SimDllArguments></SimDllArguments>
           <SimDlgDll>DARMSTM.DLL</SimDlgDll>
-          <SimDlgDllArguments>-pSTM32F103ZC</SimDlgDllArguments>
+          <SimDlgDllArguments>-pSTM32F103ZE</SimDlgDllArguments>
           <TargetDllName>SARMCM3.DLL</TargetDllName>
           <TargetDllArguments></TargetDllArguments>
           <TargetDlgDll>TARMSTM.DLL</TargetDlgDll>
