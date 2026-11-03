@@ -162,7 +162,7 @@ static void dac_play_tone(void) {
 			}
 			phase = (phase + 1U) % TONE_POINTS;
 		}
-		dbg_led_toggle();
+		//dbg_led_toggle();
 	}
 }
 
