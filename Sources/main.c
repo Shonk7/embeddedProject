@@ -8,6 +8,7 @@
 
 // Which bench test to run: 2 = ADC, 3 = DAC
 #define ACTIVE_TEST		3
+// Test comment
 
 int main(void) {
 	// SystemInit cannot leave results in globals, so read them back from hardware
