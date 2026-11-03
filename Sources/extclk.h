@@ -3,10 +3,10 @@
 
 #include "../Headers/stm32f103xe.h"
 
-// External sample clock in on PF11 (J1101 pin 6), EXTI line 11
+// External sample clock, coming in on PF11 (J1101 pin 6)
 
-// Rising edges seen so far. Only the ISR writes this, and an aligned 32-bit read
-// is atomic, so main can read it without turning interrupts off
+// Rising edges counted so far. Only the ISR writes it, and main can safely read
+// it because a 32-bit read can't be interrupted halfway
 extern volatile uint32_t extclk_edges;
 
 void extclk_init(void);

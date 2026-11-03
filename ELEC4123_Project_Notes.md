@@ -2,7 +2,7 @@
 
 Term 3 2026. Last updated 3 November 2026.
 
-This is where we're keeping everything we've worked out so far. We pulled it together from the task spec (`Embeded Elective Task 2026.pdf`), the APE Board Guide, RM0008 Rev 21, the STM32F103 datasheet Rev 13, PM0056, APE schematic Rev 1.4, and our `ELEC4123_Connected_Clock` simulation files. Anything marked **estimate** is our best working so far, and we haven't measured it yet.
+Everything we've worked out so far lives here. It comes from the task spec (`Embeded Elective Task 2026.pdf`), the APE Board Guide, RM0008 Rev 21, the STM32F103 datasheet Rev 13, PM0056, APE schematic Rev 1.4, and our `ELEC4123_Connected_Clock` simulation files. Anything marked **estimate** is our best guess until we measure it.
 
 ## 1. Where we are
 
@@ -26,7 +26,7 @@ This is where we're keeping everything we've worked out so far. We pulled it tog
 
 ## 2. What the task requires
 
-This section is our summary of the spec, so we can check our work against it without digging through the PDF.
+This is the spec boiled down, so we can check our work without digging through the PDF.
 
 **Primary objective:** sample audio inside an interrupt service routine triggered by our own external hardware timer, with the rate set over SPI from the microcontroller.
 
@@ -199,7 +199,7 @@ zID endings: 72, 67, 08, 42. Average = 189 / 4 = 47.25, so fx = 352 + 47.25 = **
 
 ## 4. Team and interfaces
 
-We split the work by who owns what, then worked out exactly where each person's code touches the next.
+Each of us owns one area, and these are the places where our work meets.
 
 | Owner | Scope |
 |---|---|
@@ -230,7 +230,7 @@ We split the work by who owns what, then worked out exactly where each person's 
 
 ## 5. Board reference
 
-These are the board facts we kept having to look up in the schematic.
+The board facts we kept looking up in the schematic.
 
 ### Pins
 
@@ -309,7 +309,7 @@ One ADC clock is 6 CPU cycles.
 
 ### The pipelined ISR
 
-Our first thought was to start the ADC and wait for it inside the ISR, but that would use most of the fx budget. So instead, each interrupt collects the conversion started on the previous edge.
+Starting the ADC and waiting for it inside the ISR would use most of the fx budget. So instead, each interrupt collects the conversion started on the previous edge.
 
 Here's the order we're planning, which we'll confirm in Stage 5:
 
@@ -324,7 +324,7 @@ Steps 2 and 4 run at a fixed time after the edge, so DSP length doesn't add jitt
 
 ### Why sampling starts in software by default
 
-The spec says sampling happens in the ISR, so software start is the literal fit. We did notice that a rising edge can start ADC1 directly through EXTI line 11 (RM0008 Table 67), which removes ISR jitter. That's why we put the clock on PF11, but we'll only use that if a demonstrator confirms it counts as sampling in the ISR.
+The spec says sampling happens in the ISR, so software start is the literal fit. A rising edge can also start ADC1 directly through EXTI line 11 (RM0008 Table 67), which removes ISR jitter. That's why we put the clock on PF11, but we'll only use that if a demonstrator confirms it counts as sampling in the ISR.
 
 Jitter of about 70 ns rms limits SNR to about 41 dB for a full-scale 20 kHz tone and 62 dB at 1.7 kHz.
 
@@ -372,7 +372,7 @@ We'll measure this properly in Stage 5, because the spec needs us to show how cl
 
 ### Mixer budget
 
-We were worried about fitting the mixer at fx, but the spec only requires it at fx/8, which gives about 1,440 cycles per sample. After ISR overhead and a margin for the UI, our working budget is about 900 cycles (**estimate**).
+The spec only requires the mixer at fx/8, which gives about 1,440 cycles per sample. After ISR overhead and a margin for the UI, our working budget is about 900 cycles (**estimate**).
 
 A.2's "tone colour preserved" means the bands must sum back cleanly at equal gains. There are two options we're considering:
 
@@ -388,7 +388,7 @@ A.2's "tone colour preserved" means the bands must sum back cleanly at equal gai
 | fx/4 | 780 Hz | 25.6 |
 | fx/8 | 390 Hz | 51.3 |
 
-That table is what made us rethink this. At fx, a plain 128-point FFT would give us only 6 bins across the whole display. So our plan is for the ISR to average 8, 4, 2 or 1 samples down to about 49.9 kHz, which makes the FFT look the same at every rate. Each frame then spans 2.56 ms.
+At fx, a plain 128-point FFT would give us only 6 bins across the whole display. So our plan is for the ISR to average 8, 4, 2 or 1 samples down to about 49.9 kHz, which makes the FFT look the same at every rate. Each frame then spans 2.56 ms.
 
 | Work per 33 ms frame at fx | Cycles (**estimate**) |
 |---|---|
@@ -473,7 +473,7 @@ Anything `SystemInit()` writes to a global gets overwritten in step 4, which is 
 | Start PLL, wait | `PLLON`, `PLLRDY` | Lock takes up to 200 µs |
 | Switch to PLL, confirm | `SW`, `SWS` | SW requests it, SWS confirms it |
 
-**One that nearly caught us:** `FLASH_ACR_LATENCY_2` in this header is `0x4`, which means bit 2, not 2 wait states. Our code uses `2U << FLASH_ACR_LATENCY_Pos`.
+**Easy mistake:** `FLASH_ACR_LATENCY_2` in this header is `0x4`, which means bit 2, not 2 wait states. Our code uses `2U << FLASH_ACR_LATENCY_Pos`.
 
 ### Build and flash
 
@@ -517,7 +517,7 @@ SYSCLK trusts `HSE_HZ`, so only the LED or PF8 result proves the frequency.
 
 ## 11. Proving each requirement
 
-The spec says we have to convince the marker, so we've listed what evidence we plan to show for each requirement.
+We have to convince the marker, so this is the evidence we plan to show for each requirement.
 
 | Requirement | Evidence | Tool |
 |---|---|---|
@@ -558,7 +558,7 @@ We can't rely on software counters alone, because a lost edge never reaches firm
 
 ## 13. Mistakes we found in the documents
 
-We ran into these along the way, so they're noted here to save everyone else the trouble.
+Errors we found in the documents.
 
 | Where | Issue | What we do |
 |---|---|---|
@@ -568,3 +568,4 @@ We ran into these along the way, so they're noted here to save everyone else the
 | `lcd_hw.c` | `LCD_mdelay` isn't in microseconds | One tick is about 0.67 ms at 72 MHz |
 | Quick reference sheet | I2C read and write addresses are swapped | Use Board Guide Ch 7 |
 | `empty_skeleton.plg` | The tutor's saved build failed, startup not assembled | See Stage 1 build notes |
+| `LCD/stm32f103xe.h` | Needs `core_cm3.h`, which isn't in `LCD/` | `.\Headers` is in the Keil include paths |
