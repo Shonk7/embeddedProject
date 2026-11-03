@@ -380,7 +380,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath></IncludePath>
+              <IncludePath>.\Headers</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
