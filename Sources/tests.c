@@ -6,6 +6,7 @@
 #include "debug.h"
 #include "adc.h"
 #include "dac.h"
+#include "extclk.h"
 #include "tests.h"
 
 // Counted in CPU cycles, so LED0 flashes once a second only at 72 MHz
@@ -179,5 +180,30 @@ void test_dac(void) {
 		dac_hold_level(1650U);
 		dac_hold_level(2500U);
 		dac_hold_level(3000U);
+	}
+}
+
+// Counts clock edges over each half second using the CPU's cycle counter. The spec
+// allows this for measuring the rate. Sample timing still comes only from the clock
+void test_extclk(void) {
+	uint32_t edges;
+	uint32_t last_edges;
+
+	extclk_init();
+	lcd_putString(10, 10, (unsigned char *)"ELEC4123 STAGE 4 CLOCK TEST");
+	lcd_put_value(30, "SYSCLK (Hz)", SystemCoreClock, 10U);
+
+	last_edges = extclk_edges;
+	last_tick = dbg_cycles();
+	for (;;) {
+		wait_cycles(HALF_SECOND_CYCLES);
+		edges = extclk_edges;
+
+		// Unsigned subtraction stays correct when the counter wraps
+		lcd_put_value(50, "CLOCK RATE (Hz)", (edges - last_edges) * 2U, 10U);
+		lcd_put_value(65, "TOTAL EDGES", edges, 10U);
+		last_edges = edges;
+
+		dbg_led_toggle();
 	}
 }

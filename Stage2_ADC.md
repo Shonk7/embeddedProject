@@ -1,8 +1,8 @@
 # Stage 2: Reading Audio with the ADC
 
-## What it does
+## What we're trying to do
 
-The ADC turns a voltage into a number from 0 to 4095. This stage reads the audio jack and shows the numbers on the screen, so we can check the ADC works.
+The ADC turns a voltage into a number from 0 to 4095, and that's how audio gets into the chip. Before trusting it with real audio, we wanted to read the jack and put the numbers on the screen, so we could see for ourselves that they make sense.
 
 | Voltage on PA3 | Number |
 |---|---|
@@ -12,40 +12,41 @@ The ADC turns a voltage into a number from 0 to 4095. This stage reads the audio
 
 There's no sound out yet. That comes in Stages 3 and 5.
 
-This test reads the ADC from the main loop, which is fine for checking it. The final audio has to sample inside the interrupt, which is Stage 5.
+We're reading the ADC from the main loop here, which is fine for checking it. The final audio has to sample inside the interrupt, and that's Stage 5.
 
-## What you need
+## What we need
 
 - Everything from Stage 1: USB-C cable and ST-Link
 - For the sound test, one of these with a 3.5 mm cable:
-  - A signal generator (best, because you can set the exact level)
+  - A signal generator (best, because we can set the exact level)
   - A phone playing a tone at low volume
 
-**Keep the level at 300 mVpp or less.** The board amplifies the jack input 11 times, so more than that clips.
+**The level needs to stay at 300 mVpp or less.** The board amplifies the jack input 11 times, so more than that clips.
 
-## Steps
+## Running it
 
 1. Connect the board the same way as Stage 1.
-2. In Keil, check `adc.c` and `adc.h` are listed under Sources. If not, right-click Sources, choose **Add Files to Group 'Sources'**, and add them.
-3. Press **F7** to build.
-4. Press **F8** to load the code.
-5. Press **RESET** on the board.
+2. Set `ACTIVE_TEST` at the top of `main.c` to `2`.
+3. In Keil, press **F7** to build, then **F8** to load.
+4. Press **RESET** on the board.
 
-## How to play sound into the board
+The screen should say `ELEC4123 STAGE 2 ADC TEST`.
 
-**Stage 2 makes no sound.** The speaker stays silent, because audio only goes in. You'll see it working when the numbers on the screen change.
+## Playing sound into the board
+
+**Stage 2 makes no sound.** The speaker stays silent, because audio only goes in. We know it's working when the numbers on the screen change.
 
 Audio goes into the **J1302 audio jack** through a 3.5 mm cable.
 
 ### Using a phone or laptop
 
 1. Set the volume to the **lowest step**.
-2. Plug a 3.5 mm cable into the headphone output and into J1302. Phones without a headphone jack need a wired adapter. Bluetooth won't work.
+2. Plug a 3.5 mm cable into the headphone output and into J1302. Phones without a headphone jack need a wired adapter, and Bluetooth won't work.
 3. Open a tone generator app or website, and pick a **1000 Hz sine** wave.
 4. Press play and raise the volume slowly.
 5. Stop when `SWING (code)` reaches about 1000 to 2000.
 
-If `MIN` reaches 0 or `MAX` reaches 4095, it's too loud, so turn it down. Music works too, but the numbers will jump around. A steady tone gives steady readings.
+If `MIN` reaches 0 or `MAX` reaches 4095, it's too loud, so we turn it down. Music works too, but the numbers jump around. A steady tone gives steady readings.
 
 ### Using a signal generator
 
@@ -57,11 +58,11 @@ If `MIN` reaches 0 or `MAX` reaches 4095, it's too loud, so turn it down. Music 
 | Offset | 0 V |
 | Output load | High-Z |
 
-Use a BNC to 3.5 mm cable, or connect the signal to the plug's tip and ground to its sleeve. This is the better option for testing, because you know the exact level going in.
+We can use a BNC to 3.5 mm cable, or connect the signal to the plug's tip and ground to its sleeve. This is the better option for testing, because we know the exact level going in.
 
-## Check it worked
+## What we expect to see
 
-The screen updates twice a second, and LED0 should still flash 60 times a minute. If you haven't finished the Stage 1 check, this also covers it.
+The screen updates twice a second, and LED0 should flash 60 times a minute. That also doubles as the Stage 1 clock check.
 
 ### Test 1: nothing plugged in
 
@@ -69,13 +70,13 @@ The screen updates twice a second, and LED0 should still flash 60 times a minute
 |---|---|
 | `AVERAGE (code)` | About 2048 |
 | `AVERAGE (mV)` | About 1650 |
-| `SWING (code)` | Small. Write this down, as it's your noise level |
+| `SWING (code)` | Small. We should write this down, as it's our noise level |
 | `CONV CYCLES` | Around 135 to 150 (estimate) |
 | `CONVERSIONS` | Around 200,000 (estimate) |
 
 ### Test 2: play a tone
 
-Use a 1 kHz sine at 100 mVpp. On a phone, you can't set an exact level, so just check that the swing goes up and down with the volume.
+We use a 1 kHz sine at 100 mVpp. On a phone we can't set an exact level, so we just check that the swing goes up and down with the volume.
 
 | Screen line | Expected |
 |---|---|
@@ -83,15 +84,15 @@ Use a 1 kHz sine at 100 mVpp. On a phone, you can't set an exact level, so just 
 | `SWING (code)` | About 1365 |
 | `SWING (mV)` | About 1100 |
 
-The 1100 mV comes from 100 mV × 11. Turn the level up or down, and the swing should follow.
+The 1100 mV comes from 100 mV × 11. Turning the level up or down should make the swing follow.
 
 ### Test 3: too loud
 
-Raise the level above 300 mVpp. `MIN` should approach 0 and `MAX` should approach 4095. That's clipping, so turn it back down.
+If we raise the level above 300 mVpp, `MIN` should approach 0 and `MAX` should approach 4095. That's clipping, so we turn it back down.
 
 ### Scope check (optional)
 
-Probe PF8 (J1101 pin 3) with ground on pin 2. PF8 is high during each conversion, so the pulse should be about 2 µs wide. That's 20 ADC clocks at 12 MHz (1.67 µs) plus a small start-up delay.
+Probing PF8 (J1101 pin 3) with ground on pin 2, we should see a pulse about 2 µs wide, because PF8 is high during each conversion. That's 20 ADC clocks at 12 MHz (1.67 µs) plus a small start-up delay.
 
 ### Passed when
 
@@ -99,9 +100,20 @@ Probe PF8 (J1101 pin 3) with ground on pin 2. PF8 is high during each conversion
 - The swing follows the tone's level
 - LED0 flashes 60 times a minute
 
+### Where we're up to
+
+**This one is still open.** When we tried it, the readings didn't seem to change much with volume. We still need to record `MIN`, `MAX` and `SWING (code)` with a 1000 Hz sine for three cases: nothing plugged in, the lowest volume, and about a quarter volume. We need to sort this out before Stage 5, because that stage depends on audio getting in.
+
+| What we might see | Likely cause | What we'd do |
+|---|---|---|
+| `MIN` near 0 and `MAX` near 4095 at every volume | Already clipping | Turn down both the device and the app volume |
+| `SWING` is about the same with sound as with silence | The sound isn't reaching the board | Push the plug fully in, and check the sound isn't still coming from the phone's speaker |
+| `SWING` is already large with silence | Noise is setting `MIN` and `MAX`, because a single spike counts | Compare with the plug out, and use a steady tone |
+| `SWING` changes a little per volume step | Probably fine | Compare the lowest volume with a much higher one |
+
 ## What the numbers mean
 
-For half a second, the code reads the ADC over and over and keeps track of the results. It then shows these values and starts again.
+For half a second, the code reads the ADC over and over and keeps track of the results. Then it shows these values and starts again.
 
 A **code** is the raw ADC number from 0 to 4095. One code is about 0.8 mV.
 
@@ -119,9 +131,11 @@ A **code** is the raw ADC number from 0 to 4095. One code is about 0.8 mV.
 
 The division drops any decimals, so 2047.9 shows as 2047.
 
+`MAX` and `MIN` show us the top and bottom of the signal. They tell us whether it's clipping and whether it's centred. For loudness, `SWING` is the one to watch.
+
 ### Worked example
 
-Play a 100 mVpp tone into the jack.
+Let's follow a 100 mVpp tone from the jack to the screen.
 
 | Step | Calculation | Result |
 |---|---|---|
@@ -137,14 +151,14 @@ Noise makes real readings slightly different from these.
 
 ### Handy calculations
 
-- **Level at the jack:** `SWING (mV) ÷ 11`. This tells you how loud your phone really is.
+- **Level at the jack:** `SWING (mV) ÷ 11`. This tells us how strong the phone's output really is.
 - **Tone size without the noise:** tone `SWING` minus silent `SWING`, roughly.
 - **Readings per second:** `CONVERSIONS × 2`.
 - **Cycles per loop:** `36,000,000 ÷ CONVERSIONS`, since half a second is 36 million cycles at 72 MHz.
 
 ### What `CONV CYCLES` should be
 
-The ADC itself takes 120 cycles: (7.5 + 12.5) ADC clocks × 6 CPU cycles each. The reading is a bit higher because it also includes the start delay and the instructions around the conversion.
+The ADC itself takes 120 cycles: (7.5 + 12.5) ADC clocks × 6 CPU cycles each. The reading comes out a bit higher because it also includes the start delay and the instructions around the conversion.
 
 `CONVERSIONS` is lower than a pure ADC rate because each loop also spends time updating `MIN`, `MAX` and the total.
 
@@ -155,7 +169,7 @@ The ADC itself takes 120 cycles: (7.5 + 12.5) ADC clocks × 6 CPU cycles each. T
 | Screen is black or stops at `SYSCLK`, and LED0 doesn't flash | The code is stuck waiting for the ADC. Check `adc_init()` still sets `ADC1EN` and that `SystemInit` still sets the ADC divider |
 | Keil says `adc_init` is undefined | `adc.c` isn't in the project. Add it under Sources |
 | Average reads about 0 or 4095 | Wrong channel or pin. Should be channel 3 on PA3 |
-| Swing doesn't change with sound | Check the plug is fully in, and that volume is up |
+| Swing doesn't change with sound | See "Where we're up to" above |
 | Swing is much bigger than expected | Level too high, or the cable is picking up noise |
 | LED0 flashes 80 times a minute | Crystal is 16 MHz. Change `HSE_HZ` in `clock.h` to `16000000U` |
 
@@ -184,21 +198,19 @@ while (!adc_is_done()) {}   // wait for it to finish
 code = adc_result();        // read the number
 ```
 
-Waiting like this is fine in a test. Stage 5 won't wait, because at 399.25 kHz that would use up most of the time for each sample.
+Waiting like this is fine in a test. Stage 5 can't wait, because at 399.25 kHz that would use up most of the time for each sample.
 
-### Why this speed and sample time
+### Why we picked this speed and sample time
 
 - **ADC clock is 12 MHz.** That's 72 MHz ÷ 6. The limit is 14 MHz, and ÷4 would give 18 MHz.
 - **Sample time is 7.5 clocks.** Each conversion takes 7.5 + 12.5 = 20 ADC clocks, or 120 CPU cycles.
 - **That fits.** At 399.25 kHz we get 180 cycles per sample.
 
-To try another sample time, change `ADC_SAMPLE_TIME` in `adc.h`, then compare `SWING` on the same tone. Use `0` for 1.5 clocks or `2` for 13.5 clocks. If the swing or noise changes a lot, tell the team, since that's useful for your journal.
+To try another sample time, we can change `ADC_SAMPLE_TIME` in `adc.h`, then compare `SWING` on the same tone. `0` gives 1.5 clocks and `2` gives 13.5 clocks. If the swing or noise changes a lot, that's useful for the journal.
 
 ### The test in tests.c
 
-This test now lives in `test_adc()` in `tests.c`. To run it again, set `ACTIVE_TEST` to `2` at the top of `main.c`, then build and load.
-
-For half a second, the loop reads the ADC as fast as it can and tracks the lowest, highest and average values. It then prints them and toggles LED0. The screen is only updated between readings.
+The test lives in `test_adc()` in `tests.c`. For half a second, the loop reads the ADC as fast as it can and tracks the lowest, highest and average values. Then it prints them and toggles LED0. The screen only updates between readings.
 
 ## How we know it works
 
@@ -216,5 +228,6 @@ For half a second, the loop reads the ADC as fast as it can and tracks the lowes
 - All code compiles for Cortex-M3 with Clang, with no warnings in our files.
 - `adc_init()` ran against a software model of the ADC's start-up rules with no violations, and the model caught a deliberately broken version.
 - The final register values matched the plan, and the screen number formatting was tested on a computer.
+- The test has been run on the board in Keil 5.
 
-**Not done yet:** a Keil build, and a run on the real board. Only the board test proves the ADC works.
+**Still to do:** record real readings. Until the swing clearly follows the tone's level, we can't say the audio input works.

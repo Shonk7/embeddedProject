@@ -480,6 +480,16 @@
               <FilePath>.\sources\tests.h</FilePath>
             </File>
             <File>
+              <FileName>extclk.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\extclk.c</FilePath>
+            </File>
+            <File>
+              <FileName>extclk.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\extclk.h</FilePath>
+            </File>
+            <File>
               <FileName>startup_stm32f10x_hd.s</FileName>
               <FileType>2</FileType>
               <FilePath>.\Sources\startup_stm32f10x_hd.s</FilePath>

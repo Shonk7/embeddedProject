@@ -1,44 +1,57 @@
 # Stage 3: Making Sound with the DAC
 
-## What it does
+## What we're trying to do
 
-The DAC does the opposite of the ADC. It turns a number from 0 to 4095 into a voltage on pin PA4, and that voltage drives the speaker.
+The DAC is the opposite of the ADC. It turns a number from 0 to 4095 into a voltage on pin PA4, and that voltage ends up driving the speaker.
 
-This stage makes the board do two things, on a repeating 18-second loop:
+To prove the DAC works by itself, we made the board do two things on a repeating 18-second loop:
 
 1. Play a 2 kHz tone through the speaker for 3 seconds.
-2. Hold five fixed voltages for 3 seconds each, so you can measure them.
+2. Hold five fixed voltages for 3 seconds each, so we can measure them.
 
-This test doesn't use the audio jack yet. Passing audio from the jack to the speaker is Stage 5.
+| Time | What the board does | What we notice |
+|---|---|---|
+| 0 to 3 s | Plays a beep | We hear it |
+| 3 to 6 s | Holds 0.5 V | Silent |
+| 6 to 9 s | Holds 1.0 V | Silent |
+| 9 to 12 s | Holds 1.65 V | Silent |
+| 12 to 15 s | Holds 2.5 V | Silent |
+| 15 to 18 s | Holds 3.0 V | Silent |
 
-## What you need
+This doesn't use the audio jack yet. Passing audio from the jack to the speaker comes in Stage 5.
+
+## What we need
 
 - Everything from Stage 1: USB-C cable and ST-Link
 - **Optional:** a multimeter or scope to measure the voltages
 - No audio source and no signal generator
 
-## Steps
+## Running it
 
 1. Connect the board the same way as Stage 1.
-2. In Keil, check `dac.c`, `dac.h`, `tests.c` and `tests.h` are listed under Sources. If not, right-click Sources, choose **Add Files to Group 'Sources'**, and add them.
-3. Check `ACTIVE_TEST` at the top of `main.c` is `3`.
-4. Press **F7** to build.
-5. Press **F8** to load the code.
-6. Press **RESET** on the board.
+2. Set `ACTIVE_TEST` at the top of `main.c` to `3`.
+3. In Keil, press **F7** to build, then **F8** to load.
+4. Press **RESET** on the board.
 
-The R1303 knob is the speaker's volume. If you hear nothing, turn it slowly, as it can be set to silent.
+The screen should say `ELEC4123 STAGE 3 DAC TEST`.
 
-## Check it worked
+The R1303 knob is the speaker's volume. If we hear nothing, we turn it slowly, as it can be set to silent.
 
-### Test 1: listen (no equipment needed)
+## What we expect to see
 
-You should hear a steady, high-pitched beep for 3 seconds, then about 15 seconds without it, then the beep again. The screen shows `OUTPUT: 2 KHZ TONE` during the beep.
+There's only one test running. These are three ways of checking it, from easiest to hardest.
 
-You'll also hear soft clicks when the voltage changes. That's normal for this test.
+### Check 1: listen
 
-### Test 2: measure the voltages
+We should hear a steady, high-pitched beep for 3 seconds, then about 15 seconds without it, then the beep again. The screen shows `OUTPUT: 2 KHZ TONE` during the beep.
 
-Connect a multimeter or scope to **J1301**, with ground on **J1303**. Read the voltage while the screen shows each target.
+Soft clicks when the voltage changes are normal.
+
+### Check 2: measure the voltages
+
+Set a multimeter to **DC volts**. The red probe goes on **J1301** and the black probe on **J1303**. These are two small test loops in the speaker section, near the R1303 knob.
+
+**Careful:** it's J1301, not J1201. J1201 is the LCD's ribbon connector, and it carries the 9.6 V backlight supply.
 
 | Screen `TARGET (mV)` | Screen `DAC CODE` | Expected at J1301 |
 |---|---|---|
@@ -48,11 +61,13 @@ Connect a multimeter or scope to **J1301**, with ground on **J1303**. Read the v
 | 2500 | 3102 | About 2.50 V |
 | 3000 | 3722 | About 3.00 V |
 
-Readings don't have to be exact. If they're all slightly high or low, measure the 3.3 V supply at J1101 pin 1, since the DAC output scales with it.
+Readings don't have to be exact. If they're all slightly high or low, we can measure the 3.3 V supply at J1101 pin 1, since the DAC output scales with it.
 
 The R1303 knob won't change these readings, because J1301 comes before it.
 
-### Test 3: see the tone (scope only)
+During the beep, the screen shows 0 for `TARGET` and `DAC CODE`. That's only a placeholder, because the output is changing 64,000 times a second and there's no single number to show. A DC meter should read about 1.65 V then, which is the wave's average.
+
+### Check 3: see the tone (scope only)
 
 | Setting | Value |
 |---|---|
@@ -62,7 +77,7 @@ The R1303 knob won't change these readings, because J1301 comes before it.
 | Vertical | 1 V/div |
 | Horizontal | 100 µs/div |
 
-During the beep, you should see a sine wave made of 32 small steps:
+During the beep, we should see a sine wave made of 32 small steps:
 
 | What to read | Expected |
 |---|---|
@@ -73,9 +88,19 @@ During the beep, you should see a sine wave made of 32 small steps:
 
 ### Passed when
 
-- You can hear the 2 kHz beep
+- We can hear the 2 kHz beep
 - The fixed voltages are close to their targets
-- LED0 flashes 60 times a minute
+
+### Where we're up to
+
+The test is running on the board, but **we still don't have a J1301 reading**. The screen showing a target only tells us what the code asked for, not what's on the pin. If the meter shows nothing, this is the order we'd check things:
+
+1. **Meter setting:** it has to be on DC volts. On AC volts, a steady voltage reads about 0. On a scope, use DC coupling for the same reason.
+2. **Meter and ground:** keep the black probe on J1303 and touch the red probe to J1101 pin 1, without bridging it to pin 2. It should read about 3.3 V. If not, the problem is the meter or the ground connection.
+3. **Timing:** read the meter while the screen shows `OUTPUT: FIXED VOLTAGE`. Each voltage only lasts 3 seconds.
+4. **The beep:** if we can hear it, the DAC works and the problem is the probes. If there's no beep and 0 V at J1301, the DAC isn't running.
+
+**About LED0:** we commented out the LED toggle during the beep while debugging. So in this test, LED0 pauses for the 3-second beep and flashes about 50 times a minute, not 60. That isn't a clock fault. For the clock check, we use the Stage 2 or Stage 4 test instead.
 
 ## What the numbers mean
 
@@ -96,9 +121,9 @@ For code 3102: 3102 × 3300 ÷ 4095 = about 2500 mV.
 
 One code step is about 0.8 mV, the same as the ADC.
 
-### How the tone is made
+### How we made the tone
 
-The speaker makes sound when the voltage moves, so a constant voltage is silent. To make a tone, the code sends the voltage up and down in a sine shape.
+A speaker only makes sound when the voltage moves, so a constant voltage is silent. To make a tone, we push the voltage up and down in a sine shape.
 
 | Item | Calculation | Result |
 |---|---|---|
@@ -112,13 +137,15 @@ The speaker makes sound when the voltage moves, so a constant voltage is silent.
 
 ## How the sound reaches the speaker
 
+We traced the path on the schematic:
+
 ```text
 PA4 -> J1301 test point -> R1304 -> R1303 volume knob -> 1 µF capacitor -> MAX9700 amplifier -> speaker
 ```
 
 - **DAC:** makes the voltage, but it's too weak to drive a speaker.
 - **R1304 and R1303:** set the volume. Even at maximum, about half the signal gets through.
-- **1 µF capacitor:** blocks the steady voltage and passes only changes. That's why fixed voltages are silent and only make a click when they change.
+- **1 µF capacitor:** blocks the steady voltage and passes only changes. That's why fixed voltages are silent and only click when they change.
 - **MAX9700:** the amplifier that drives the speaker.
 
 ## If something's wrong
@@ -127,13 +154,11 @@ PA4 -> J1301 test point -> R1304 -> R1303 volume knob -> 1 µF capacitor -> MAX9
 |---|---|
 | No sound, but J1301 shows the voltages | Turn R1303. The DAC is working |
 | No sound, and J1301 stays at 0 V | Check `dac_init()` runs and that `ACTIVE_TEST` is `3` |
-| Screen still says STAGE 2 | `ACTIVE_TEST` is `2`, or the new code didn't load |
+| Screen shows a different stage | `ACTIVE_TEST` isn't `3`, or the new code didn't load |
 | Keil says `dac_init` or `test_dac` is undefined | `dac.c` or `tests.c` isn't in the project |
 | Scope shows the tone at 2.667 kHz, not 2.000 kHz | Crystal is 16 MHz, not 12 |
 | 3000 mV step reads low | Measure the 3.3 V supply first. The DAC can't go above about 3.1 V |
 | Loud clicks at each step | Normal for this test, so turn R1303 down |
-
-If LED0 flashes 80 times a minute, change `HSE_HZ` in `clock.h` to `16000000U`.
 
 ## How the code works
 
@@ -147,7 +172,7 @@ If LED0 flashes 80 times a minute, change `HSE_HZ` in `clock.h` to `16000000U`.
 | 4 | `dac_write(DAC_MID_CODE)` | Starts at 1.65 V, the audio resting level |
 | 5 | `DAC->CR = DAC_CR_EN1` | Turns on channel 1, with its output buffer on |
 
-Writing a number is one line:
+Writing a number is just one line:
 
 ```c
 DAC->DHR12R1 = code;
@@ -157,10 +182,10 @@ DAC->DHR12R1 = code;
 
 ### The tests
 
-The tests moved to `tests.c` so that Stage 2's test isn't lost. Pick which one runs in `main.c`:
+We moved the tests to `tests.c` so that adding a stage wouldn't wipe out the one before. We pick which one runs in `main.c`:
 
 ```c
-#define ACTIVE_TEST 3    // 2 = ADC, 3 = DAC
+#define ACTIVE_TEST 4    // 2 = ADC, 3 = DAC, 4 = external clock
 ```
 
 `test_dac()` loops through the beep and the five voltages. `dac_play_tone()` waits 1,125 cycles, sends the next value from a 32-entry sine table, and repeats.
@@ -179,8 +204,9 @@ The tests moved to `tests.c` so that Stage 2's test isn't lost. Pick which one r
 
 **Checked so far:**
 
-- All code compiles for Cortex-M3 with Clang with no warnings in our files, for both test settings.
+- All code compiles for Cortex-M3 with Clang with no warnings in our files.
 - `dac_init()` ran on a computer with fake registers, and the final values matched the plan.
 - The sine table, the 1,125-cycle timing and the code values were recalculated separately and matched.
+- The test has been run on the board in Keil 5.
 
-**Not done yet:** a Keil build, and a run on the real board. Only hearing the beep and measuring J1301 proves it works.
+**Still to do:** record the J1301 voltages. Only hearing the beep and measuring J1301 proves the DAC works.

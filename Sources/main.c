@@ -6,8 +6,8 @@
 #include "debug.h"
 #include "tests.h"
 
-// Which bench test to run: 2 = ADC, 3 = DAC
-#define ACTIVE_TEST		3
+// Which bench test to run: 2 = ADC, 3 = DAC, 4 = external clock
+#define ACTIVE_TEST		4
 // Test comment
 
 int main(void) {
@@ -26,12 +26,14 @@ int main(void) {
 		lcd_fontColor(WHITE, BLACK);
 	}
 
-	// Neither test returns. main must never return: with the standard library
+	// No test returns. main must never return: with the standard library
 	// that ends in a semihosting BKPT, which faults when no debugger is attached
 #if ACTIVE_TEST == 2
 	test_adc();
-#else
+#elif ACTIVE_TEST == 3
 	test_dac();
+#else
+	test_extclk();
 #endif
 
 	for (;;) {
