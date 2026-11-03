@@ -6,19 +6,20 @@
 #include "debug.h"
 #include "tests.h"
 
-// Which bench test to run: 2 = ADC, 3 = DAC
-#define ACTIVE_TEST		3
-// Test comment
+// Which bench test to run: 2 = ADC, 3 = DAC, 4 = external clock
+#define ACTIVE_TEST		4
 
 int main(void) {
-	// SystemInit cannot leave results in globals, so read them back from hardware
+	// SystemInit can't leave results in globals, so read the speed back from hardware
 	SystemCoreClockUpdate();
 	dbg_init();
 
+	// Start the screen with a black background
 	lcd_init();
 	lcd_fillScreen(BLACK);
 	lcd_fontColor(WHITE, BLACK);
 
+	// Warn on screen and light the red LED if we didn't reach 72 MHz
 	if (SystemCoreClock != SYSCLK_HZ) {
 		dbg_fault_led_on();
 		lcd_fontColor(RED, BLACK);
@@ -26,12 +27,14 @@ int main(void) {
 		lcd_fontColor(WHITE, BLACK);
 	}
 
-	// Neither test returns. main must never return: with the standard library
-	// that ends in a semihosting BKPT, which faults when no debugger is attached
+	// Run the chosen test. It never returns, which matters because leaving main
+	// ends in a breakpoint that faults when no debugger is attached
 #if ACTIVE_TEST == 2
 	test_adc();
-#else
+#elif ACTIVE_TEST == 3
 	test_dac();
+#else
+	test_extclk();
 #endif
 
 	for (;;) {

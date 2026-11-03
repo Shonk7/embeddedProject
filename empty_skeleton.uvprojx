@@ -380,7 +380,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath></IncludePath>
+              <IncludePath>.\Headers</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -478,6 +478,16 @@
               <FileName>tests.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\sources\tests.h</FilePath>
+            </File>
+            <File>
+              <FileName>extclk.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\extclk.c</FilePath>
+            </File>
+            <File>
+              <FileName>extclk.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\extclk.h</FilePath>
             </File>
             <File>
               <FileName>startup_stm32f10x_hd.s</FileName>
