@@ -424,6 +424,26 @@
               <FilePath>.\sources\adc.h</FilePath>
             </File>
             <File>
+              <FileName>dac.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\dac.c</FilePath>
+            </File>
+            <File>
+              <FileName>dac.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\dac.h</FilePath>
+            </File>
+            <File>
+              <FileName>tests.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\tests.c</FilePath>
+            </File>
+            <File>
+              <FileName>tests.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\tests.h</FilePath>
+            </File>
+            <File>
               <FileName>startup_stm32f10x_hd.s</FileName>
               <FileType>2</FileType>
               <FilePath>.\Sources\startup_stm32f10x_hd.s</FilePath>

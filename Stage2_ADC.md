@@ -194,7 +194,9 @@ Waiting like this is fine in a test. Stage 5 won't wait, because at 399.25 kHz t
 
 To try another sample time, change `ADC_SAMPLE_TIME` in `adc.h`, then compare `SWING` on the same tone. Use `0` for 1.5 clocks or `2` for 13.5 clocks. If the swing or noise changes a lot, tell the team, since that's useful for your journal.
 
-### main.c
+### The test in tests.c
+
+This test now lives in `test_adc()` in `tests.c`. To run it again, set `ACTIVE_TEST` to `2` at the top of `main.c`, then build and load.
 
 For half a second, the loop reads the ADC as fast as it can and tracks the lowest, highest and average values. It then prints them and toggles LED0. The screen is only updated between readings.
 

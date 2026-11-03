@@ -425,7 +425,7 @@ The speaker and class-D stage remove some of this acoustically. For an electrica
 |---|---|---|
 | 1 | Clock tree, debug tools | Written, awaiting board test |
 | 2 | ADC on PA3: calibration, sample time, noise check | Written, awaiting board test |
-| 3 | DAC on PA4: fixed value, then J1301 check | Not started |
+| 3 | DAC on PA4: fixed value, then J1301 check | Written, awaiting board test |
 | 4 | EXTI on PF11 with a test RC oscillator on the breadboard | Not started |
 | 5 | Passthrough ISR, cycle measurement | Not started |
 | 6 | SPI driver, rate and enable commands, invalid-command test button | Not started |
