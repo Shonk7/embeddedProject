@@ -16,6 +16,7 @@
 //   7 = external clock count, 8 = SPI command test,
 //   9 = SPI loopback (no clock board, jumper J901 pin 5 to pin 3)
 #define ACTIVE_TEST		4
+// Test comment
 
 int main(void) {
 	// SystemInit can't leave results in globals, so read the speed back from hardware

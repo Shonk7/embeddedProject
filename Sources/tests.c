@@ -145,7 +145,7 @@ static void dac_hold_level(uint32_t target_mv) {
 
 	for (toggles = 0U; toggles < HOLD_TOGGLES; toggles++) {
 		wait_cycles(HALF_SECOND_CYCLES);
-		dbg_led_toggle();
+		//dbg_led_toggle();
 	}
 }
 
