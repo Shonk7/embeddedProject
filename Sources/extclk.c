@@ -1,9 +1,8 @@
 #include "extclk.h"
-#include "debug.h"
 
 volatile uint32_t extclk_edges = 0U;
 
-// Makes every rising edge on PF11 fire EXTI15_10_IRQHandler
+// Makes every rising edge on PF11 fire EXTI15_10_IRQHandler, which is in audio.c
 void extclk_init(void) {
 	// AFIO does the pin routing below. Without its clock, that write is ignored
 	RCC->APB2ENR |= RCC_APB2ENR_IOPFEN | RCC_APB2ENR_AFIOEN;
@@ -30,16 +29,4 @@ void extclk_init(void) {
 	NVIC_ClearPendingIRQ(EXTI15_10_IRQn);
 	NVIC_SetPriority(EXTI15_10_IRQn, 0U);
 	NVIC_EnableIRQ(EXTI15_10_IRQn);
-}
-
-// Runs on every clock edge. The name must match the startup file exactly, or the
-// default handler runs instead and hangs
-void EXTI15_10_IRQHandler(void) {
-	dbg_scope_high();				// PF8 stays high while the ISR runs
-
-	// Writing 1 clears the pending flag. Left set, this ISR would fire forever
-	EXTI->PR = EXTI_PR_PR11;
-	extclk_edges++;
-
-	dbg_scope_low();
 }

@@ -4,7 +4,8 @@
 #include "../Headers/stm32f103xe.h"
 
 // Pins for watching what the firmware is doing:
-//   LED0 = PF0 (green), LED7 = PF7 (red), both on when driven high
+//   LED5 = PF5 (heartbeat), LED7 = PF7 (red), both on when driven high.
+//   PF0 to PF4 belong to the rate LEDs in ui/rate_ctrl.c
 //   Scope pin = PF8, on J1101 pin 3. J1101 pin 2 or 8 is GND
 
 void dbg_init(void);

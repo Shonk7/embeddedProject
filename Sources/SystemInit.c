@@ -6,13 +6,7 @@
 #define READY_TIMEOUT	0x10000U
 
 // Get to 72 MHz from either crystal: 12 MHz x 6, or 16 MHz / 2 x 9
-#if HSE_HZ == 12000000U
 #define PLL_SETTINGS	RCC_CFGR_PLLMULL6
-#elif HSE_HZ == 16000000U
-#define PLL_SETTINGS	(RCC_CFGR_PLLXTPRE | RCC_CFGR_PLLMULL9)
-#else
-#error "Add PLL settings for this HSE_HZ"
-#endif
 
 // CPU speed in Hz. SystemCoreClockUpdate() fills this in from main
 uint32_t SystemCoreClock = HSI_HZ;

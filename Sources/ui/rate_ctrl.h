@@ -41,8 +41,7 @@ const char *rate_short_label(rate_t rate);	// "399 kHz"
 // so the bytes can be checked before the SPI module exists
 extern volatile uint8_t clock_last_cmd;
 
-// Sending: clock_spi_send(uint8_t cmd) is declared and defined by the SPI
-// module in its own folder (not in Sources/ui). Its calls in rate_ctrl.c are
-// commented out until that module is added - see the SPI note there
+// Sending: rate_set() and rate_enable() call clock_spi_send() from
+// Sources/spi/clock_spi.c
 
 #endif

@@ -450,6 +450,26 @@
               <FilePath>.\sources\extclk.h</FilePath>
             </File>
             <File>
+              <FileName>audio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sources\audio.c</FilePath>
+            </File>
+            <File>
+              <FileName>audio.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\sources\audio.h</FilePath>
+            </File>
+            <File>
+              <FileName>clock_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Sources\spi\clock_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>clock_spi.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Sources\spi\clock_spi.h</FilePath>
+            </File>
+            <File>
               <FileName>startup_stm32f10x_hd.s</FileName>
               <FileType>2</FileType>
               <FilePath>.\Sources\startup_stm32f10x_hd.s</FilePath>

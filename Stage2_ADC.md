@@ -18,7 +18,7 @@ With nothing plugged in, `AVERAGE (code)` should be about 2048, or about 1650 mV
 
 With a 100 mVpp tone, the average should stay near 2048 and the swing should jump to about 1365 (1100 mV). Turn the level up and down, and the swing should follow. If you push it past 300 mVpp, `MIN` should drop towards 0 and `MAX` should climb towards 4095. That's clipping.
 
-LED0 should flash 60 times a minute throughout, which doubles as the Stage 1 clock check. If you have a scope on PF8, you'll see a pulse about 2 µs wide for each conversion.
+LED5 should flash 60 times a minute throughout, which doubles as the Stage 1 clock check. If you have a scope on PF8, you'll see a pulse about 2 µs wide for each conversion.
 
 ## What the screen is telling us
 

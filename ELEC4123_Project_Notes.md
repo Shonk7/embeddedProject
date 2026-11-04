@@ -9,7 +9,7 @@ Everything we've worked out so far lives here. It comes from the task spec (`Emb
 | Item | Status |
 |---|---|
 | Firmware stages 1 to 3 | Written, and running on the board in Keil 5. We still need to record real readings |
-| Firmware stage 4 | Written, not yet run on the board |
+| Firmware stages 4 and 5 | Written, results not recorded yet |
 | Keil project | Moved to Keil 5 (`empty_skeleton.uvprojx`), set to `-O3` |
 | Clock hardware | LTspice functional model only. No SPI receiver, invalid-command logic, saved settings, glitch-free switching or power-on reset yet |
 | Anti-aliasing and reconstruction | Not started, no owner yet |
@@ -17,7 +17,7 @@ Everything we've worked out so far lives here. It comes from the task spec (`Emb
 
 **What we need to do next**
 
-1. Count LED0 for a minute to settle whether the crystal is 12 or 16 MHz (section 10).
+1. Count LED5 for a minute to settle whether the crystal is 12 or 16 MHz (section 10).
 2. Record the Stage 2 readings, because they didn't seem to change much with volume when we tried it.
 3. Record the Stage 3 voltages at J1301.
 4. Pick our three extension parts. We're leaning towards A.1, A.2 and B.1 (section 8).
@@ -241,7 +241,8 @@ The board facts we kept looking up in the schematic.
 | External clock | **PF11** | J1101 pin 6 | Next to breadboard. EXTI line 11 |
 | Spare trigger | PF9 | J1101 pin 4 | EXTI line 9 can trigger the DAC |
 | Scope debug | PF8 | J1101 pin 3 | Our timing marker pin |
-| LED0 | PF0 | Green, active high | Heartbeat |
+| Rate LEDs | PF0 to PF4 | LED0 to LED4, active high | PF0 fx, PF1 fx/2, PF2 fx/4, PF3 fx/8, PF4 clock running (`ui/rate_ctrl.c`) |
+| LED5 | PF5 | Active high | Heartbeat in the bench tests |
 | LED7 | PF7 | Red, active high | Clock fault |
 | SPI1 | PA5 SCK, PA6 MISO, PA7 MOSI | J901 to J904, test port J1701 | Shared bus |
 | Clock chip select | PC1 | J901 pin 6 | Active low |
@@ -311,7 +312,7 @@ One ADC clock is 6 CPU cycles.
 
 Starting the ADC and waiting for it inside the ISR would use most of the fx budget. So instead, each interrupt collects the conversion started on the previous edge.
 
-Here's the order we're planning, which we'll confirm in Stage 5:
+This is the order `audio.c` uses, with the mixer and FFT steps still to come in Stage 7:
 
 1. Clear the EXTI pending flag.
 2. Write the already-computed output sample to the DAC.
@@ -320,7 +321,7 @@ Here's the order we're planning, which we'll confirm in Stage 5:
 5. Run passthrough or the mixer, and store the next output.
 6. Add to the FFT capture if it's active.
 
-Steps 2 and 4 run at a fixed time after the edge, so DSP length doesn't add jitter. It costs us a little extra latency: one or two sample periods.
+Steps 2 and 4 run at a fixed time after the edge, so DSP length doesn't add jitter. It costs us two sample periods of latency: 5 µs at fx and 40 µs at fx/8.
 
 ### Why sampling starts in software by default
 
@@ -355,7 +356,7 @@ We need to keep any `__disable_irq` section to a few instructions, because a lon
 | Interrupt exit | 14 to 20 |
 | **Passthrough total** | **55 to 80 of 180 (about 30 to 45% CPU)** |
 
-We'll measure this properly in Stage 5, because the spec needs us to show how close we run to the limit.
+That's the bare audio work. The counters and timing checks in `audio.c` add to it, so we'd guess 45 to 60% with them on. Stage 5 reads the real number off the screen, which we need because the spec wants us to show how close we run to the limit.
 
 ### Risk register
 
@@ -435,9 +436,9 @@ We're leaning towards **A.1, A.2 and B.1**, for these reasons:
 | 1 | Clock tree, debug tools | Running, LED count still to do |
 | 2 | ADC on PA3: calibration, sample time, noise check | Running, volume response still unclear |
 | 3 | DAC on PA4: fixed value, then J1301 check | Running, J1301 reading still to do |
-| 4 | EXTI on PF11, with a signal generator as our stand-in clock | Written, not yet run on the board |
-| 5 | Passthrough ISR, cycle measurement | Not started |
-| 6 | SPI driver, rate and enable commands, invalid-command test button | Not started |
+| 4 | EXTI on PF11, with a signal generator as our stand-in clock | Written, generator results still to record |
+| 5 | Passthrough ISR, cycle measurement | Written, not yet run on the board |
+| 6 | SPI driver, rate and enable commands, invalid-command test | Written and wired into the team's UI, not yet run on the board |
 | 7 | DSP hook, gain updates, FFT capture and decimation, measured rate | Not started |
 | 8 | Full measurements, no-drop evidence, filter results | Not started |
 
@@ -487,9 +488,9 @@ If the build reports `Cannot find argument 'Reset_Handler'`, the startup file wa
 
 ### Test
 
-Our first test put 1 kHz on PF8, but later stages replaced that loop. LED0 still works as the check in the Stage 2 and Stage 4 tests, so we count its flashes for one minute. The PF8 column below applies to commit `4fccd1a`.
+Our first test put 1 kHz on PF8, but later stages replaced that loop. LED5 still works as the check in tests 2, 6 and 7, so we count its flashes for one minute. The PF8 column below applies to commit `4fccd1a`.
 
-| PF8 | LED0 per minute | Meaning | Action |
+| PF8 | LED5 per minute | Meaning | Action |
 |---|---|---|---|
 | **1.000 kHz** | **60** | 72 MHz, crystal is 12 MHz | Pass |
 | 1.333 kHz | 80 | Crystal is 16 MHz, CPU at 96 MHz | Set `HSE_HZ` to `16000000U`, rebuild straight away |
