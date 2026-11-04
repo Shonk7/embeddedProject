@@ -124,7 +124,7 @@ static void draw_rate_buttons(void) {
 
 	for (r = RATE_FX; r < RATE_COUNT; r++) {
 		if (r == rate_get()) {
-			draw_button(&btn_rate[r], rate_short_label(r), BLACK,
+			draw_button(&btn_rate[r], rate_short_label(r), RED,
 			            rate_is_enabled() ? GREEN : YELLOW);
 		} else {
 			draw_button(&btn_rate[r], rate_short_label(r), WHITE, NAVY);
@@ -141,7 +141,7 @@ static void draw_enable_button(void) {
 }
 
 static void draw_main_page(void) {
-	lcd_fillScreen(BLACK);
+	//lcd_fillScreen(BLACK);
 	draw_title("AUDIO SAMPLER");
 
 	lcd_drawRect(STATUS_X0, STATUS_Y0, STATUS_X1, STATUS_Y1, LIGHT_GRAY);

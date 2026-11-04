@@ -7,9 +7,9 @@
 
 // Indicator LEDs on port F, active high (LED1-LED5 on the board).
 // PF0, PF7 and PF8 belong to debug.c, so they are left alone here
-#define LED_RATE_FIRST	1U								// PF1 fx, PF2 fx/2, PF3 fx/4, PF4 fx/8
+#define LED_RATE_FIRST	0U								// PF1 fx, PF2 fx/2, PF3 fx/4, PF4 fx/8
 #define LED_RATE_MASK	(0xFU << LED_RATE_FIRST)
-#define LED_ENABLE_BIT	(1U << 5)						// PF5 on = clock enabled
+#define LED_ENABLE_BIT	(1U << 4)						// PF5 on = clock enabled
 #define LED_ALL_MASK	(LED_RATE_MASK | LED_ENABLE_BIT)
 
 static const uint8_t rate_cmd[RATE_COUNT] = {
@@ -52,7 +52,7 @@ void rate_init(void) {
 	GPIOF->BSRR = LED_ALL_MASK << 16;
 
 	// PF1-PF5: push-pull output, 2 MHz (CNF = 00, MODE = 10). 4 bits per pin in CRL
-	for (pin = 1U; pin <= 5U; pin++) {
+	for (pin = 0U; pin <= 4U; pin++) {
 		GPIOF->CRL = (GPIOF->CRL & ~(0xFU << (pin * 4U))) | (0x2U << (pin * 4U));
 	}
 
