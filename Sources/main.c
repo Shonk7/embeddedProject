@@ -15,6 +15,7 @@
 //   2 = ADC test, 3 = DAC test, 5 = touch calibration, 6 = audio stats,
 //   7 = external clock count, 8 = SPI command test
 #define ACTIVE_TEST		4
+// Test comment
 
 int main(void) {
 	// SystemInit can't leave results in globals, so read the speed back from hardware
