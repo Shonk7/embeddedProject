@@ -14,8 +14,6 @@
 #define TOUCH_CS_PORT_EN	RCC_APB2ENR_IOPCEN
 
 // ---- Calibration: raw 12-bit reading (0-4095) at each screen edge.
-// Run ACTIVE_TEST 5 in main.c, touch each edge, copy the numbers here.
-// Left > right (or top > bottom) is fine: the mapping handles reversed axes
 #define TOUCH_SWAP_XY			0		// 1 if moving left-right changes raw Y
 #define TOUCH_RAW_AT_LEFT		200
 #define TOUCH_RAW_AT_RIGHT		3900
