@@ -2,7 +2,7 @@
 
 Up to now the chip has been running on its own schedule, and the spec doesn't allow that for audio. Sampling has to be driven by our external clock. So we need the chip to notice every rising edge on a pin, right away, whatever else it's doing.
 
-That's what an interrupt is for. Each rising edge on PF11 makes the chip drop what it's doing, run a tiny function, and carry on. For now that function just counts the edge and pulses a pin so we can see it happen. Real audio goes in there in Stage 5.
+That's what an interrupt is for. Each rising edge on PF11 makes the chip drop what it's doing, run a short function, and carry on. This test watches that happen by counting edges and pulsing a pin. Since Stage 5, the same function also does the audio, so this test passes sound through too.
 
 The clock board doesn't need to exist yet, because the spec lets us test with a signal generator. It just can't be part of the final system.
 
@@ -43,7 +43,7 @@ The black clip must only ever go to GND, because generators and scopes are usual
 
 ## Running it
 
-Set `ACTIVE_TEST` to `4`, build with **F7**, load with **F8** and press **RESET**. The screen should say `ELEC4123 STAGE 4 CLOCK TEST`.
+Set `ACTIVE_TEST` to `7`, build with **F7**, load with **F8** and press **RESET**. The screen should say `ELEC4123 STAGE 4 CLOCK TEST`.
 
 With nothing connected, `CLOCK RATE (Hz)` should sit at 0, which shows the pin isn't firing random interrupts. Then start the generator at 1 kHz and step up through our four rates:
 
@@ -55,13 +55,13 @@ With nothing connected, `CLOCK RATE (Hz)` should sit at 0, which shows the pin i
 | 199.625 kHz | About 199625 |
 | 399.25 kHz | About 399250 |
 
-A few Hz either way is normal, because the generator and our crystal never match perfectly. Watch LED0 at 399.25 kHz too. It should still flash 60 times a minute. The main loop drives that LED, so if it keeps time, the interrupts aren't starving the rest of the program.
+A few Hz either way is normal, because the generator and our crystal never match perfectly. Watch LED5 at 399.25 kHz too. It should still flash 60 times a minute. The main loop drives that LED, so if it keeps time, the interrupts aren't starving the rest of the program.
 
 ## The best test
 
 If the generator has a burst mode, set it to 399.25 kHz and a burst of exactly 100,000 pulses. Write down `TOTAL EDGES`, send one burst, and it should go up by exactly 100,000. Any lower and we lost interrupts. Any higher and the signal is ringing, so we're counting extra edges. This is real evidence for the marker that we aren't missing anything.
 
-With a scope, put channel 1 on PF11 and channel 2 on PF8, triggered on PF11's rising edge at about 200 ns/div. PF8 pulses once per clock edge. The delay before it rises shows how long the chip takes to react, and we'd guess about 0.25 to 0.4 µs. The pulse width shows how long our ISR runs, probably 0.1 to 0.2 µs. Those are estimates, and these two numbers will be our first real measurement of the 180-cycle budget, so save them for the journal.
+With a scope, put channel 1 on PF11 and channel 2 on PF8, triggered on PF11's rising edge at about 200 ns/div. PF8 pulses once per clock edge. The delay before it rises shows how long the chip takes to react, and we'd guess about 0.25 to 0.4 µs. The pulse width shows how long our ISR runs, which should be under a microsecond now that it includes the audio work. Those are estimates, and these two numbers will be our first real measurement of the 180-cycle budget, so save them for the journal.
 
 ## What the numbers mean
 
@@ -77,13 +77,14 @@ The spec lets us use the chip's timing to measure the rate, as long as sampling 
 
 A few things in the manuals are easy to trip over. `EXTICR[2]` is what the manual calls `AFIO_EXTICR3`, because the array starts at 0 and the manual starts at 1. Lines 10 to 15 all share one handler, which is fine while only line 11 is enabled, but we'd have to check which line fired if a teammate added another. The Board Guide's `NVIC->ISER[k/32] = (k%32)` is also wrong and should be `1 << (k%32)`, so we use `NVIC_EnableIRQ`. And we went with a pull-down rather than the guide's pull-up, since our clock is driven anyway and this keeps an unplugged pin quiet.
 
-The handler itself is tiny:
+The handler started out tiny, and moved to `audio.c` in Stage 5. These are the lines that came from this stage:
 
 ```c
 void EXTI15_10_IRQHandler(void) {
 	dbg_scope_high();
 	EXTI->PR = EXTI_PR_PR11;
 	extclk_edges++;
+	/* the audio work goes here */
 	dbg_scope_low();
 }
 ```
@@ -102,8 +103,8 @@ The `PR` line is the important one. We clear the flag by writing a 1, which is o
 | Rate is about half | High level is too low, or the wire is on the wrong pin |
 | Rate is about double | The signal is ringing. Shorten the wires and check on a scope |
 | Rate jumps around | Loose wire or bad ground. Keep the ground wire beside the signal wire |
-| Screen stops at `SYSCLK` and LED0 stops | The ISR is stuck firing. Check `EXTI->PR` is still cleared |
-| Keil says `test_extclk` is undefined | `extclk.c` isn't in the project |
+| Screen stops at `SYSCLK` and LED5 stops | The ISR is stuck firing. Check `EXTI->PR` is still cleared |
+| Keil says `test_extclk` or `audio_init` is undefined | `tests.c` or `audio.c` isn't in the project |
 | Keil says `core_cm3.h` not found | `.\Headers` is missing from the C/C++ include paths |
 
 ## Where this stands

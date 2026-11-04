@@ -38,7 +38,7 @@ If the meter shows nothing, start with the setting. On AC volts a steady voltage
 
 The beep is a useful tie-breaker. If you can hear it, the DAC works and it's a probe problem. No beep and 0 V at J1301 means the DAC isn't running.
 
-One more thing: the LED toggle during the beep is commented out for debugging. So in this test LED0 pauses for 3 seconds and flashes about 50 times a minute, not 60. That isn't a clock fault, so use the Stage 2 or Stage 4 test for the clock check.
+One more thing: the LED toggle during the beep is commented out for debugging. So in this test LED5 pauses for 3 seconds and flashes about 50 times a minute, not 60. That isn't a clock fault, so use the Stage 2 or Stage 4 test for the clock check.
 
 ## How the tone is made
 

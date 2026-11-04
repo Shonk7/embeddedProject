@@ -7,10 +7,13 @@
 #include "adc.h"
 #include "dac.h"
 #include "extclk.h"
+#include "audio.h"
+#include "spi/clock_spi.h"
+#include "ui/rate_ctrl.h"
 #include "tests.h"
 
-// Half a second in CPU cycles. LED0 toggles on this, so it only flashes once a
-// second if the CPU really runs at 72 MHz
+// Half a second in CPU cycles. The heartbeat LED (LED5) toggles on this, so it only
+// flashes once a second if the CPU really runs at 72 MHz
 #define HALF_SECOND_CYCLES	(SYSCLK_HZ / 2U)
 
 // For turning ADC codes into millivolts
@@ -109,7 +112,7 @@ void test_adc(void) {
 		}
 		last_tick += HALF_SECOND_CYCLES;
 
-		// Show the results, then flash LED0 so we can check the clock
+		// Show the results, then flash LED5 so we can check the clock
 		lcd_put_value(50, "AVERAGE (code)", sum / count, 10U);
 		lcd_put_value(65, "MIN (code)", min, 10U);
 		lcd_put_value(80, "MAX (code)", max, 10U);
@@ -174,7 +177,7 @@ static void dac_play_tone(void) {
 			}
 			phase = (phase + 1U) % TONE_POINTS;
 		}
-		//dbg_led_toggle();	// off while debugging, so LED0 pauses during the beep
+		//dbg_led_toggle();	// off while debugging, so LED5 pauses during the beep
 	}
 }
 
@@ -201,7 +204,7 @@ void test_extclk(void) {
 	uint32_t edges;
 	uint32_t last_edges;
 
-	extclk_init();
+	audio_init();
 	lcd_putString(10, 10, (unsigned char *)"ELEC4123 STAGE 4 CLOCK TEST");
 	lcd_put_value(30, "SYSCLK (Hz)", SystemCoreClock, 10U);
 
@@ -217,5 +220,98 @@ void test_extclk(void) {
 		last_edges = edges;
 
 		dbg_led_toggle();
+	}
+}
+
+// Stage 5: audio runs in the ISR by itself. This loop only shows how it's doing:
+// the rate, whether any samples went wrong, and how much of the budget the ISR uses
+void test_audio(void) {
+	uint32_t edges;
+	uint32_t last_edges;
+	uint32_t rate;
+	uint32_t budget;
+	uint32_t isr_cycles;
+
+	audio_init();
+	lcd_putString(10, 10, (unsigned char *)"ELEC4123 STAGE 5 PASSTHROUGH");
+	lcd_put_value(30, "SYSCLK (Hz)", SystemCoreClock, 10U);
+
+	last_edges = extclk_edges;
+	last_tick = dbg_cycles();
+	for (;;) {
+		wait_cycles(HALF_SECOND_CYCLES);
+
+		// Work out the rate, and the CPU cycles we get per sample at that rate
+		edges = extclk_edges;
+		rate = (edges - last_edges) * 2U;
+		last_edges = edges;
+		budget = (rate != 0U) ? (SYSCLK_HZ / rate) : 0U;
+
+		// Take the longest ISR from this half second, then start tracking again
+		isr_cycles = audio_max_cycles;
+		audio_max_cycles = 0U;
+
+		lcd_put_value(50, "CLOCK RATE (Hz)", rate, 10U);
+		lcd_put_value(65, "TOTAL EDGES", edges, 10U);
+		lcd_put_value(85, "OVERRUNS", audio_overruns, 10U);
+		lcd_put_value(100, "LATE EDGES", audio_late_edges, 10U);
+		lcd_put_value(120, "ISR CYCLES", isr_cycles, 10U);
+		lcd_put_value(135, "BUDGET (cycles)", budget, 10U);
+		lcd_put_value(150, "ISR LOAD (%)", (budget != 0U) ? ((isr_cycles * 100U) / budget) : 0U, 10U);
+
+		dbg_led_toggle();
+	}
+}
+
+// Stage 6: the commands to send, in order. The bad ones sit right after a valid
+// rate, so the rate shown next to them should stay the same
+typedef struct {
+	uint8_t cmd;
+	const char *label;
+} spi_step_t;
+
+static const spi_step_t spi_steps[] = {
+	{ CMD_ENABLE,    "E1 ENABLE" },
+	{ CMD_RATE_FX,   "D1 FX" },
+	{ CMD_RATE_FX_2, "D2 FX/2" },
+	{ CMD_RATE_FX_4, "D4 FX/4" },
+	{ CMD_RATE_FX_8, "D8 FX/8" },
+	{ 0x55U,         "55 BAD" },
+	{ 0xD3U,         "D3 BAD" },
+	{ 0xFFU,         "FF BAD" },
+	{ 0x00U,         "00 BAD" },
+	{ CMD_DISABLE,   "E0 DISABLE" },
+	{ 0xE2U,         "E2 BAD" },
+	{ CMD_ENABLE,    "E1 ENABLE" }
+};
+
+#define SPI_STEP_COUNT	(sizeof(spi_steps) / sizeof(spi_steps[0]))
+
+// Stage 6: sends each command, then measures the clock that comes back on PF11.
+// No UI involved, so it tests the SPI link and the clock board by themselves
+void test_spi(void) {
+	uint32_t i;
+	uint32_t edges;
+
+	audio_init();
+	clock_spi_init();
+	lcd_putString(10, 10, (unsigned char *)"ELEC4123 STAGE 6 SPI TEST");
+	lcd_put_value(30, "SYSCLK (Hz)", SystemCoreClock, 10U);
+
+	last_tick = dbg_cycles();
+	for (;;) {
+		for (i = 0U; i < SPI_STEP_COUNT; i++) {
+			clock_spi_send(spi_steps[i].cmd);
+
+			// Give the board half a second to settle, then count edges for half a second
+			wait_cycles(HALF_SECOND_CYCLES);
+			edges = extclk_edges;
+			wait_cycles(HALF_SECOND_CYCLES);
+
+			// One line per command: what we sent, and the rate we measured after it
+			lcd_put_value((unsigned short)(50U + i * 14U), spi_steps[i].label,
+			              (extclk_edges - edges) * 2U, 10U);
+			dbg_led_toggle();
+		}
 	}
 }

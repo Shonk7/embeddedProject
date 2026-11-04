@@ -5,8 +5,15 @@
 #include "clock.h"
 #include "debug.h"
 #include "tests.h"
+#include "audio.h"
+#include "ui/rate_ctrl.h"
+#include "ui/ui.h"
+#include "ui/touch.h"
 
-// Which bench test to run: 2 = ADC, 3 = DAC, 4 = external clock
+// What to run:
+//   4 = the full system: touchscreen, audio passthrough and clock board control
+//   2 = ADC test, 3 = DAC test, 5 = touch calibration, 6 = audio stats,
+//   7 = external clock count, 8 = SPI command test
 #define ACTIVE_TEST		4
 
 int main(void) {
@@ -27,16 +34,31 @@ int main(void) {
 		lcd_fontColor(WHITE, BLACK);
 	}
 
-	// Run the chosen test. It never returns, which matters because leaving main
+	// Run the chosen test. Tests never return, which matters because leaving main
 	// ends in a breakpoint that faults when no debugger is attached
 #if ACTIVE_TEST == 2
 	test_adc();
 #elif ACTIVE_TEST == 3
 	test_dac();
-#else
+#elif ACTIVE_TEST == 5
+	touch_calibration_screen();
+#elif ACTIVE_TEST == 6
+	test_audio();
+#elif ACTIVE_TEST == 7
 	test_extclk();
+#elif ACTIVE_TEST == 8
+	test_spi();
+#else
+	// Full system. Audio starts first and then runs by itself in the ISR. rate_init
+	// puts the clock board in a known state over SPI (off, fx/8, on), then the UI
+	// takes over. LEDs: PF0 fx, PF1 fx/2, PF2 fx/4, PF3 fx/8, PF4 clock running
+	audio_init();
+	rate_init();
+	ui_init();
 #endif
 
-	for (;;) {
+	// The touchscreen runs here. Audio carries on underneath it in the ISR
+	while (1) {
+		ui_poll();
 	}
 }
