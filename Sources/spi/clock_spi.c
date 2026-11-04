@@ -12,6 +12,8 @@
 
 static int initialised = 0;
 
+volatile uint8_t clock_spi_last_echo = 0U;
+
 // Puts 4-bit pin settings into a GPIO control register, leaving other pins alone
 static uint32_t set_pin_mode(uint32_t reg, uint32_t pin, uint32_t mode) {
 	return (reg & ~(0xFU << (pin * 4U))) | (mode << (pin * 4U));
@@ -38,8 +40,9 @@ void clock_spi_init(void) {
 	initialised = 1;
 }
 
-void clock_spi_send(uint8_t cmd) {
+uint8_t clock_spi_send(uint8_t cmd) {
 	uint32_t saved_cr1;
+	uint8_t echo;
 
 	if (!initialised) {
 		clock_spi_init();
@@ -60,11 +63,12 @@ void clock_spi_send(uint8_t cmd) {
 	}
 	SPI1->DR = cmd;
 
-	// Wait for all 8 bits to go out. Reading DR clears the byte that came back,
-	// which is nothing useful because the clock board can't talk back
+	// Wait for all 8 bits to go out, and collect the byte that came back. It's
+	// only meaningful with a loopback jumper, since the clock board can't talk back
 	while ((SPI1->SR & SPI_SR_RXNE) == 0U) {
 	}
-	(void)SPI1->DR;
+	echo = (uint8_t)SPI1->DR;
+	clock_spi_last_echo = echo;
 	while (SPI1->SR & SPI_SR_BSY) {
 	}
 
@@ -77,4 +81,5 @@ void clock_spi_send(uint8_t cmd) {
 		SPI1->CR1 = saved_cr1 & ~SPI_CR1_SPE;
 		SPI1->CR1 = saved_cr1;
 	}
+	return echo;
 }

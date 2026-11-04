@@ -13,7 +13,8 @@
 // What to run:
 //   4 = the full system: touchscreen, audio passthrough and clock board control
 //   2 = ADC test, 3 = DAC test, 5 = touch calibration, 6 = audio stats,
-//   7 = external clock count, 8 = SPI command test
+//   7 = external clock count, 8 = SPI command test,
+//   9 = SPI loopback (no clock board, jumper J901 pin 5 to pin 3)
 #define ACTIVE_TEST		4
 
 int main(void) {
@@ -48,6 +49,8 @@ int main(void) {
 	test_extclk();
 #elif ACTIVE_TEST == 8
 	test_spi();
+#elif ACTIVE_TEST == 9
+	test_spi_loopback();
 #else
 	// Full system. Audio starts first and then runs by itself in the ISR. rate_init
 	// puts the clock board in a known state over SPI (off, fx/8, on), then the UI

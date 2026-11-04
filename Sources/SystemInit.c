@@ -5,7 +5,7 @@
 // this is tens of ms, well past crystal startup or PLL lock (200 us)
 #define READY_TIMEOUT	0x10000U
 
-// Get to 72 MHz from either crystal: 12 MHz x 6, or 16 MHz / 2 x 9
+// Get to 72 MHz from either crystal: 12 MHz x 6
 #define PLL_SETTINGS	RCC_CFGR_PLLMULL6
 
 // CPU speed in Hz. SystemCoreClockUpdate() fills this in from main

@@ -315,3 +315,52 @@ void test_spi(void) {
 		}
 	}
 }
+
+// SPI check without the clock board. With a jumper from MOSI to MISO (J901 pin 5 to
+// pin 3), every byte we send comes straight back. Sends 0 to 255 over and over and
+// counts any byte that comes back different
+void test_spi_loopback(void) {
+	uint32_t value = 0U;
+	uint32_t sent = 0U;
+	uint32_t errors = 0U;
+	uint32_t window_errors;
+	uint8_t echo = 0U;
+
+	clock_spi_init();
+	lcd_putString(10, 10, (unsigned char *)"ELEC4123 SPI LOOPBACK TEST");
+	lcd_putString(10, 22, (unsigned char *)"Jumper J901 pin 5 to pin 3");
+	lcd_put_value(40, "SYSCLK (Hz)", SystemCoreClock, 10U);
+
+	last_tick = dbg_cycles();
+	for (;;) {
+		// Send bytes for half a second, checking each one as it comes back
+		window_errors = 0U;
+		while ((dbg_cycles() - last_tick) < HALF_SECOND_CYCLES) {
+			echo = clock_spi_send((uint8_t)value);
+			if (echo != (uint8_t)value) {
+				window_errors++;
+			}
+			value = (value + 1U) & 0xFFU;
+			sent++;
+		}
+		last_tick += HALF_SECOND_CYCLES;
+		errors += window_errors;
+
+		// The last pair should match, and errors should stay at 0
+		lcd_put_value(60, "LAST SENT (hex)", (value - 1U) & 0xFFU, 16U);
+		lcd_put_value(75, "LAST ECHO (hex)", echo, 16U);
+		lcd_put_value(95, "BYTES SENT", sent, 10U);
+		lcd_put_value(110, "ERRORS", errors, 10U);
+
+		if (window_errors == 0U) {
+			lcd_fontColor(GREEN, BLACK);
+			lcd_putString(10, 130, (unsigned char *)"PASS: every byte came back   ");
+		} else {
+			lcd_fontColor(RED, BLACK);
+			lcd_putString(10, 130, (unsigned char *)"FAIL: check the jumper       ");
+		}
+		lcd_fontColor(WHITE, BLACK);
+
+		dbg_led_toggle();
+	}
+}

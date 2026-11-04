@@ -16,7 +16,12 @@ void clock_spi_init(void);
 
 // Sends one byte and waits until it's finished. Any byte goes out, including
 // invalid ones, so the demo can show the board ignoring them. Main loop only:
-// touch.c shares SPI1, and the two must never run at once
-void clock_spi_send(uint8_t cmd);
+// touch.c shares SPI1, and the two must never run at once.
+// Returns the byte that came back on MISO. The clock board never sends anything,
+// but with a jumper from MOSI to MISO it's an echo of what we sent
+uint8_t clock_spi_send(uint8_t cmd);
+
+// The last byte that came back, for the Keil Watch window
+extern volatile uint8_t clock_spi_last_echo;
 
 #endif
