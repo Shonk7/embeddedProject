@@ -5,9 +5,13 @@
 #include "clock.h"
 #include "debug.h"
 #include "tests.h"
+#include "ui/rate_ctrl.h"
+#include "ui/ui.h"
+#include "ui/touch.h"
 
-// Which bench test to run: 2 = ADC, 3 = DAC, 4 = external clock
+// Which bench test to run: 2 = ADC, 3 = DAC, 4 = main page UI, 5 = touch calibration
 #define ACTIVE_TEST		4
+// Test comment
 
 int main(void) {
 	// SystemInit can't leave results in globals, so read the speed back from hardware
@@ -33,10 +37,15 @@ int main(void) {
 	test_adc();
 #elif ACTIVE_TEST == 3
 	test_dac();
+#elif ACTIVE_TEST == 5
+	touch_calibration_screen();
 #else
-	test_extclk();
+	// Main page. LEDs: PF1 fx, PF2 fx/2, PF3 fx/4, PF4 fx/8, PF5 clock enabled
+	rate_init();
+	ui_init();
 #endif
 
 	for (;;) {
+		ui_poll();
 	}
 }

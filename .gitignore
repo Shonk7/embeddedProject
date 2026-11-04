@@ -1,0 +1,25 @@
+# ---- Keil uVision build outputs ----
+Objects/
+Listings/
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.htm
+*.lnp
+*.map
+*.dep
+*.sct
+*.lst
+*.plg
+*.bak
+*.build_log.htm
+EventRecorderStub.scvd
+
+# ---- Per-user Keil window layout ----
+*.uvguix.*
+
+# ---- OS clutter ----
+.DS_Store
+Thumbs.db
