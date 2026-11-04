@@ -1,10 +1,11 @@
-#include "../Headers/stm32f103xe.h"
-#include "../LCD/lcd_grph.h"
-#include "../LCD/font5x7.h"
-#include "clock.h"
-#include "debug.h"
+#include "../../Headers/stm32f103xe.h"
+#include "../../LCD/lcd_grph.h"
+#include "../../LCD/font5x7.h"
+#include "../clock.h"
+#include "../debug.h"
 #include "rate_ctrl.h"
 #include "ui.h"
+#include "touch.h"
 
 // ---------------------------------------------------------------------------
 // Layout (portrait 240 x 320). Every touch area is a rectangle
@@ -154,7 +155,7 @@ static void draw_main_page(void) {
 	draw_button(&btn_mixer, "MIXER", WHITE, DARK_CYAN);
 	draw_button(&btn_spectrum, "SPECTRUM", WHITE, DARK_CYAN);
 
-	// Temporary until touch works
+	// Backup controls (touch also works)
 	text1x(8U, 308U, "PB0: next rate  PB1: start/stop", DARK_GRAY, BLACK);
 }
 
@@ -283,12 +284,18 @@ static uint32_t buttons_pressed(void) {
 
 // ---------------------------------------------------------------------------
 void ui_init(void) {
+	touch_init();
 	buttons_init();
 	show_page(PAGE_MAIN);
 }
 
 void ui_poll(void) {
 	uint32_t pressed = buttons_pressed();
+	uint16_t tx, ty;
+
+	if (touch_poll(&tx, &ty)) {
+		ui_touch(tx, ty);
+	}
 
 	if (pressed != 0U) {
 		if (page != PAGE_MAIN) {

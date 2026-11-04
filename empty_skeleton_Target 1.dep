@@ -1,83 +1,0 @@
-Dependencies for Project 'empty_skeleton', Target 'Target 1': (DO NOT MODIFY !)
-CompilerVersion: 6240000::V6.24::ARMCLANG
-F (.\sources\main.c)(0x6AE932DE)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./main.o -MMD)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-I (sources\..\LCD\ili9341.h)(0x6AE9253B)
-I (sources\..\LCD\lcd_hw.h)(0x6AE9253B)
-I (sources\..\LCD\lcd_grph.h)(0x6AE9253B)
-I (sources\clock.h)(0x6AE9253B)
-I (sources\debug.h)(0x6AE9253B)
-I (sources\tests.h)(0x6AE9253B)
-I (sources\rate_ctrl.h)(0x6AE932A5)
-I (sources\ui.h)(0x6AE932DE)
-F (.\sources\SystemInit.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./systeminit.o -MMD)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-I (sources\clock.h)(0x6AE9253B)
-F (.\sources\debug.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./debug.o -MMD)
-I (sources\debug.h)(0x6AE9253B)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-F (.\sources\clock.h)(0x6AE9253B)()
-F (.\sources\debug.h)(0x6AE9253B)()
-F (.\sources\adc.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./adc.o -MMD)
-I (sources\adc.h)(0x6AE9253B)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-F (.\sources\adc.h)(0x6AE9253B)()
-F (.\sources\dac.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./dac.o -MMD)
-I (sources\dac.h)(0x6AE9253B)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-F (.\sources\dac.h)(0x6AE9253B)()
-F (.\sources\tests.c)(0x6AE92A8B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./tests.o -MMD)
-I (sources\..\Headers\stm32f103xe.h)(0x6AE9253B)
-I (sources\..\Headers\core_cm3.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmInstr.h)(0x6AE9253B)
-I (sources\..\Headers\core_cmFunc.h)(0x6AE9253B)
-I (sources\..\Headers\system_stm32f1xx.h)(0x6AE9253B)
-I (sources\..\LCD\ili9341.h)(0x6AE9253B)
-I (sources\..\LCD\lcd_hw.h)(0x6AE9253B)
-I (sources\..\LCD\lcd_grph.h)(0x6AE9253B)
-I (sources\clock.h)(0x6AE9253B)
-I (sources\debug.h)(0x6AE9253B)
-I (sources\adc.h)(0x6AE9253B)
-I (sources\dac.h)(0x6AE9253B)
-I (sources\tests.h)(0x6AE9253B)
-F (.\sources\tests.h)(0x6AE9253B)()
-F (.\Sources\startup_stm32f10x_hd.s)(0x6AE9253B)(--target=arm-arm-none-eabi -mcpu=cortex-m3 -masm=auto  -Wa,armasm,--diag_suppress=A1950W -c-gdwarf-4 -Wa,armasm,--pd,"__EVAL SETA 1"-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-Wa,armasm,--pd,"__UVISION_VERSION SETA 543" -Wa,armasm,--pd,"STM32F10X_HD SETA 1" -Wa,armasm,--pd,"_RTE_ SETA 1"-o ./startup_stm32f10x_hd.o)
-F (.\headers\stm32f103xe.h)(0x6AE9253B)()
-F (.\headers\system_stm32f1xx.h)(0x6AE9253B)()
-F (.\LCD\font5x7.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./font5x7.o -MMD)
-I (LCD\font_macro.h)(0x6AE9253B)
-F (.\LCD\lcd_grph.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./lcd_grph.o -MMD)
-I (LCD\ili9341.h)(0x6AE9253B)
-I (LCD\lcd_grph.h)(0x6AE9253B)
-I (LCD\font5x7.h)(0x6AE9253B)
-F (.\LCD\lcd_hw.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./lcd_hw.o -MMD)
-I (LCD\stm32f103xe.h)(0x6AE9253B)
-I (C:\Users\Pc\AppData\Local\Arm\Packs\ARM\CMSIS\6.4.0\CMSIS\Core\Include\core_cm3.h)(0x6AE84E95)
-I (LCD\system_stm32f1xx.h)(0x6AE9253B)
-I (LCD\ili9341.h)(0x6AE9253B)
-I (LCD\lcd_hw.h)(0x6AE9253B)
-F (.\LCD\lcd_ili9341.c)(0x6AE9253B)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m3 -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__EVAL -gdwarf-4 -O3 -fno-function-sections-I./RTE/_Target_1-IC:/Users/Pc/AppData/Local/Arm/Packs/ARM/CMSIS/6.4.0/CMSIS/Core/Include-IC:/Users/Pc/AppData/Local/Arm/Packs/Keil/STM32F1xx_DFP/2.4.1/Device/Include-D__UVISION_VERSION="543" -DSTM32F10X_HD -D_RTE_-o ./lcd_ili9341.o -MMD)
-I (LCD\ili9341.h)(0x6AE9253B)
-I (LCD\stm32f103xe.h)(0x6AE9253B)
-I (C:\Users\Pc\AppData\Local\Arm\Packs\ARM\CMSIS\6.4.0\CMSIS\Core\Include\core_cm3.h)(0x6AE84E95)
-I (LCD\system_stm32f1xx.h)(0x6AE9253B)
