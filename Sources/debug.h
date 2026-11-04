@@ -24,7 +24,7 @@ __STATIC_INLINE void dbg_scope_toggle(void) {
 }
 
 __STATIC_INLINE void dbg_led_toggle(void) {
-	GPIOF->BSRR = (GPIOF->ODR & GPIO_ODR_ODR0) ? GPIO_BSRR_BR0 : GPIO_BSRR_BS0;
+	GPIOF->BSRR = (GPIOF->ODR & GPIO_ODR_ODR5) ? GPIO_BSRR_BR5 : GPIO_BSRR_BS5;
 }
 
 // Red LED: the clock didn't reach 72 MHz

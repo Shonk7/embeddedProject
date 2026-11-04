@@ -45,7 +45,7 @@ int main(void) {
 	ui_init();
 #endif
 
-	for (;;) {
+	while (1) {
 		ui_poll();
 	}
 }
