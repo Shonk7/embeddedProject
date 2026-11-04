@@ -1,6 +1,10 @@
 #include "../../Headers/stm32f103xe.h"
 #include "rate_ctrl.h"
 
+// SPI note: when the SPI module exists, include its header here, e.g.
+// #include "../<spi folder>/<spi header>.h"
+// and uncomment the two clock_spi_send() lines below (in rate_set and rate_enable)
+
 // Indicator LEDs on port F, active high (LED1-LED5 on the board).
 // PF0, PF7 and PF8 belong to debug.c, so they are left alone here
 #define LED_RATE_FIRST	1U								// PF1 fx, PF2 fx/2, PF3 fx/4, PF4 fx/8
@@ -23,11 +27,7 @@ static const char * const rate_text_short[RATE_COUNT] = {
 static rate_t current_rate = RATE_FX_8;
 static int clock_enabled = 0;
 
-// Placeholder until the SPI driver exists. Weak, so a real clock_spi_send()
-// anywhere else in the project replaces it without editing this file
-__attribute__((weak)) void clock_spi_send(uint8_t cmd) {
-	(void)cmd;
-}
+volatile uint8_t clock_last_cmd = 0U;
 
 // One BSRR write: the selected rate's LED on, the other three off, and the
 // enable LED following the state. Set and reset bits never overlap
@@ -66,13 +66,15 @@ void rate_set(rate_t rate) {
 	if ((uint32_t)rate >= (uint32_t)RATE_COUNT) {
 		return;
 	}
-	clock_spi_send(rate_cmd[rate]);
+	clock_last_cmd = rate_cmd[rate];
+	// clock_spi_send(rate_cmd[rate]);		// SPI: uncomment when the SPI module exists
 	current_rate = rate;
 	leds_update();
 }
 
 void rate_enable(int on) {
-	clock_spi_send(on ? CMD_ENABLE : CMD_DISABLE);
+	clock_last_cmd = on ? CMD_ENABLE : CMD_DISABLE;
+	// clock_spi_send(on ? CMD_ENABLE : CMD_DISABLE);	// SPI: uncomment when the SPI module exists
 	clock_enabled = (on != 0);
 	leds_update();
 }

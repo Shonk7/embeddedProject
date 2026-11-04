@@ -27,7 +27,7 @@ typedef enum {
 // (disable, fx/8, enable), because its flip-flops power up random
 void rate_init(void);
 
-// Main loop only. Each one sends a command and updates the LEDs
+// Main loop only. Each one produces a command byte and updates the LEDs
 void rate_set(rate_t rate);
 void rate_enable(int on);
 
@@ -37,9 +37,12 @@ uint32_t rate_hz(rate_t rate);
 const char *rate_label(rate_t rate);		// "399.25 kHz"
 const char *rate_short_label(rate_t rate);	// "399 kHz"
 
-// Sends one byte to the clock board. The default in rate_ctrl.c is a weak
-// placeholder that does nothing. The SPI owner writes the real function with
-// this exact name in their own file, and the linker uses theirs instead
-void clock_spi_send(uint8_t cmd);
+// The last command byte produced (0 = none yet). For the Keil Watch window,
+// so the bytes can be checked before the SPI module exists
+extern volatile uint8_t clock_last_cmd;
+
+// Sending: clock_spi_send(uint8_t cmd) is declared and defined by the SPI
+// module in its own folder (not in Sources/ui). Its calls in rate_ctrl.c are
+// commented out until that module is added - see the SPI note there
 
 #endif
