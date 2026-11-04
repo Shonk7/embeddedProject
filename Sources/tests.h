@@ -8,5 +8,6 @@ void test_dac(void);
 void test_extclk(void);
 void test_audio(void);
 void test_spi(void);
+void test_spi_loopback(void);
 
 #endif

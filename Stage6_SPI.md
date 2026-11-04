@@ -28,6 +28,38 @@ Here's what the clock board has to agree with:
 
 SCK and MOSI also go to the touch controller and the EEPROM, so the clock board's shift register will see their traffic too. That's fine as long as it only latches on its own CS rising. The last 8 bits before that rising edge are always ours.
 
+## Testing before the clock board exists
+
+We don't need the clock board to know the SPI side works. There are three ways to check it, easiest first.
+
+### The loopback jumper (`ACTIVE_TEST` 9)
+
+This one needs nothing but a female-to-female jumper wire. Connect **J901 pin 5 (MOSI) to J901 pin 3 (MISO)**. SPI sends and receives at the same time, so with that wire in place, every bit we send comes straight back in. The test sends 0 to 255 over and over and checks each byte as it returns.
+
+Pins 1, 3 and 5 sit in one column, and pin 1 is ground, so make sure the jumper doesn't touch it. A driven MOSI pin shorted to ground isn't good for the chip.
+
+Set `ACTIVE_TEST` to `9`, build, load and press **RESET**. With the jumper in, the screen should show `ERRORS` stuck at 0, `LAST SENT` and `LAST ECHO` matching, and a green `PASS`. `BYTES SENT` should climb by roughly 16,000 to 17,000 every half second, because each byte takes about 30 µs once the code around it is counted.
+
+Now pull the jumper out. It should switch to a red `FAIL` and the errors should climb, because nothing is driving MISO anymore. That's worth doing, because it proves the test can actually fail.
+
+A pass tells us SPI1 is switched on, the pins are set up properly, and every byte actually goes out of the chip and finishes. It can't tell us about the chip select or the bit order, because a byte that went out backwards would also come back backwards. The scope covers those.
+
+The jumper is safe with the touch controller and EEPROM on the same bus, because both leave MISO alone while their chip selects are high, and `clock_spi_init()` makes sure they are.
+
+### The scope
+
+Run test 8 or 9 and probe **J1701 pin 5** (SCK), **J1701 pin 9** (MOSI) and **J901 pin 6** (CS), with ground on an even pin of J1701. Test 8 is easier to watch, because it sends just one byte a second. Trigger on CS falling.
+
+You should see CS drop, eight clock pulses about 3.6 µs apart, and CS rise again once the eighth one finishes. The whole byte takes about 28 µs. Test 8 starts with `E1`, then `D1`, and `D1` on MOSI reads 1, 1, 0, 1, 0, 0, 0, 1 at the eight rising clock edges. That's the bit order the clock board will see.
+
+Test 8 itself is fine to run with nothing connected. Every rate will just read 0, which shows the SPI side doesn't hang waiting for anything.
+
+### Through the UI, with the debugger
+
+To check the touchscreen really sends bytes, run the full system (`ACTIVE_TEST` 4) in Keil's debugger instead of just flashing it. Use **Debug → Start/Stop Debug Session** and add `clock_last_cmd` and `clock_spi_last_echo` to a Watch window. Turn on **View → Periodic Window Update** so they refresh while it runs.
+
+Every tap on a rate button or START/STOP should change `clock_last_cmd` to the right byte, and the rate LEDs PF0 to PF4 should follow along. With the loopback jumper still in, `clock_spi_last_echo` should match it each time, which proves the byte left the chip and isn't just a value set in memory.
+
 ## Test 1: SPI by itself (`ACTIVE_TEST` 8)
 
 This test leaves the UI out, so if something's wrong, we know it's the link or the clock board. It sends each command in turn, waits half a second for the board to settle, measures the rate coming back on PF11 for half a second, and prints it next to the command. Every step takes a second, and the whole list repeats.
@@ -98,6 +130,7 @@ Both sides had used test numbers 4 and 5 for different things, so `ACTIVE_TEST` 
 | 6 | Audio stats (Stage 5) |
 | 7 | External clock count (Stage 4) |
 | 8 | SPI command test (Stage 6) |
+| 9 | SPI loopback, no clock board needed (Stage 6) |
 
 ## If something's wrong
 
@@ -113,7 +146,7 @@ Both sides had used test numbers 4 and 5 for different things, so `ACTIVE_TEST` 
 
 ## Where this stands
 
-Everything compiles together cleanly at all seven `ACTIVE_TEST` settings: our code, the UI team's code, and this module. We also ran `clock_spi_send()` against simulated registers. Every byte went out with CS low, in mode 0, MSB first, at 72 MHz ÷ 256, and CS only rose once SPI1 had finished. The touch driver's settings came back every time, and two deliberately broken versions were caught.
+Everything compiles together cleanly at every `ACTIVE_TEST` setting: our code, the UI team's code, and this module. We also ran `clock_spi_send()` against simulated registers. Every byte went out with CS low, in mode 0, MSB first, at 72 MHz ÷ 256, and CS only rose once SPI1 had finished. The touch driver's settings came back every time, and two deliberately broken versions were caught. With MOSI wired back to MISO in the model, all 256 byte values came back unchanged.
 
 **Nothing in this stage has run on the board yet**, and we haven't connected the real clock board. The test 8 table is what will prove it.
 
