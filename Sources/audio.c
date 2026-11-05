@@ -33,7 +33,7 @@ void EXTI15_10_IRQHandler(void) {
 	dbg_scope_high();				// PF8 stays high while the ISR runs
 
 	// Writing 1 clears the pending flag. Left set, this ISR would fire forever
-	EXTI->PR = EXTI_PR_PR11;
+	EXTI->PR = EXTCLK_PR_FLAG;
 	extclk_edges++;
 
 	// Output first, so the DAC updates at the same time after every edge
@@ -51,7 +51,7 @@ void EXTI15_10_IRQHandler(void) {
 	adc_start();
 
 	// A pending flag here means the next edge came before we finished
-	if (EXTI->PR & EXTI_PR_PR11) {
+	if (EXTI->PR & EXTCLK_PR_FLAG) {
 		audio_late_edges++;
 	}
 
