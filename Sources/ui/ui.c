@@ -3,7 +3,11 @@
 #include "../../LCD/font5x7.h"
 #include "../clock.h"
 #include "../debug.h"
+#include "../audio.h"
+#include "../extclk.h"
+#include "../Sampling/sampling.h"
 #include "rate_ctrl.h"
+#include "mixer.h"
 #include "ui.h"
 #include "touch.h"
 
@@ -160,7 +164,7 @@ static void draw_main_page(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Extension pages (placeholders until Ext A and Ext B exist)
+// Placeholder page (spectrum, until Ext B exists)
 // ---------------------------------------------------------------------------
 static void draw_placeholder_page(const char *title, const char *line) {
 	lcd_fillScreen(BLACK);
@@ -172,16 +176,343 @@ static void draw_placeholder_page(const char *title, const char *line) {
 	draw_button(&btn_back, "BACK", WHITE, DARK_CYAN);
 }
 
+static void show_page(page_t p);
+
+// ---------------------------------------------------------------------------
+// Mixer page (Ext A). Three gain bars: tap a bar to set its gain, 0 to 2 in
+// steps of 0.05 (the white mark is 1.0). Crossover -/+ buttons (soft goal,
+// +-50 %). Two lines of live stats: ISR load, measured rate, late edges, clips
+// ---------------------------------------------------------------------------
+#define MIX_STATUS_Y	36U
+#define MIX_ROW_Y0		50U		// top of the first gain row
+#define MIX_ROW_PITCH	44U		// distance between rows
+#define MIX_BAR_X0		8U
+#define MIX_BAR_X1		231U
+#define MIX_BAR_TOP		18U		// bar position inside its row
+#define MIX_BAR_BOT		37U
+#define MIX_BAR_W		(MIX_BAR_X1 - MIX_BAR_X0 - 1U)	// 222 pixels inside the frame
+#define MIX_VALUE_X		184U	// "1.00" in big text, right of the label
+#define MIX_FC_LABEL_Y	186U
+#define MIX_STATS_Y		254U
+
+// Gains are kept here in hundredths (100 = 1.00) so the display is exact
+#define GAIN_MAX_H		200U
+#define GAIN_STEP_H		5U		// 0.05 per step
+#define FC1_STEP_HZ		50U		// 250 to 750 Hz in 11 steps
+#define FC2_STEP_HZ		250U	// 2000 to 6000 Hz in 17 steps
+
+// Interrupt entry and exit, which the ISR's own cycle count can't see (Stage 5)
+#define ISR_ENTRY_EXIT_CYCLES	30U
+
+static const box_t btn_fc1_down = {   8, 198,  55, 221 };
+static const box_t btn_fc1_up   = { 184, 198, 231, 221 };
+static const box_t btn_fc2_down = {   8, 226,  55, 249 };
+static const box_t btn_fc2_up   = { 184, 226, 231, 249 };
+static const box_t btn_mix_back = {   8, 272, 115, 303 };
+static const box_t btn_mix_flat = { 124, 272, 231, 303 };
+
+static const lcd_color_t band_colour[MIXER_BANDS] = { MAGENTA, GREEN, CYAN };
+
+static uint32_t gain_h[MIXER_BANDS] = { 100U, 100U, 100U };
+
+// Measured every half second by stats_update()
+static uint32_t stat_last_tick;
+static uint32_t stat_last_edges;
+static uint32_t stat_rate_hz;
+static uint32_t stat_isr_cycles;
+
+// Writes v in decimal at p and returns the new end of the string
+static char *put_uint(char *p, uint32_t v) {
+	char digits[10];
+	uint32_t n = 0U;
+
+	do {
+		digits[n++] = (char)('0' + (v % 10U));
+		v /= 10U;
+	} while (v != 0U);
+	while (n > 0U) {
+		*p++ = digits[--n];
+	}
+	*p = '\0';
+	return p;
+}
+
+static char *put_text(char *p, const char *s) {
+	while (*s != '\0') {
+		*p++ = *s++;
+	}
+	*p = '\0';
+	return p;
+}
+
+// Hundredths -> "1.25"
+static void gain_text(char *p, uint32_t h) {
+	p[0] = (char)('0' + (h / 100U));
+	p[1] = '.';
+	p[2] = (char)('0' + ((h / 10U) % 10U));
+	p[3] = (char)('0' + (h % 10U));
+	p[4] = '\0';
+}
+
+// Hundredths -> the mixer's Q14 gain (1.00 -> 16384), rounded
+static uint32_t gain_q14(uint32_t h) {
+	return (h * MIXER_GAIN_ONE + 50U) / 100U;
+}
+
+// "LOW   0-500 Hz", "MID   500-4000 Hz", "HIGH  4000+ Hz"
+static void band_label(char *p, uint32_t band) {
+	if (band == MIXER_LOW) {
+		p = put_text(p, "LOW   0-");
+		p = put_uint(p, mixer_fc1());
+	} else if (band == MIXER_MID) {
+		p = put_text(p, "MID   ");
+		p = put_uint(p, mixer_fc1());
+		p = put_text(p, "-");
+		p = put_uint(p, mixer_fc2());
+	} else {
+		p = put_text(p, "HIGH  ");
+		p = put_uint(p, mixer_fc2());
+		p = put_text(p, "+");
+	}
+	(void)put_text(p, " Hz");
+}
+
+static void draw_gain_row(uint32_t band) {
+	uint16_t y0 = (uint16_t)(MIX_ROW_Y0 + band * MIX_ROW_PITCH);
+	uint16_t top = y0 + MIX_BAR_TOP;
+	uint16_t bot = y0 + MIX_BAR_BOT;
+	uint16_t fill = (uint16_t)((gain_h[band] * MIX_BAR_W) / GAIN_MAX_H);
+	uint16_t one_x = MIX_BAR_X0 + 1U + MIX_BAR_W / 2U;
+	char text[24];
+
+	// Label and value
+	lcd_fillRect(MIX_BAR_X0, y0, MIX_VALUE_X - 1U, y0 + 15U, BLACK);
+	band_label(text, band);
+	text1x(MIX_BAR_X0, y0 + 4U, text, LIGHT_GRAY, BLACK);
+	gain_text(text, gain_h[band]);
+	text2x(MIX_VALUE_X, y0, text, WHITE, BLACK);
+
+	// Bar: coloured up to the gain, black after it, white mark at 1.0
+	lcd_drawRect(MIX_BAR_X0, top, MIX_BAR_X1, bot, LIGHT_GRAY);
+	if (fill > 0U) {
+		lcd_fillRect(MIX_BAR_X0 + 1U, top + 1U, MIX_BAR_X0 + fill, bot - 1U, band_colour[band]);
+	}
+	if (fill < MIX_BAR_W) {
+		lcd_fillRect(MIX_BAR_X0 + 1U + fill, top + 1U, MIX_BAR_X1 - 1U, bot - 1U, BLACK);
+	}
+	lcd_line(one_x, top, one_x, bot, WHITE);
+}
+
+static void draw_mixer_status(void) {
+	char text[41];
+	char *p;
+
+	lcd_fillRect(0U, MIX_STATUS_Y, 239U, MIX_STATUS_Y + 9U, BLACK);
+	if (!sampling_is_running()) {
+		text1x(8U, MIX_STATUS_Y, "OFF: build with ACTIVE_TEST 10", RED, BLACK);
+	} else if (!mixer_is_active()) {
+		text1x(8U, MIX_STATUS_Y, "BYPASSED: mixer runs at 50 kHz only", YELLOW, BLACK);
+	} else {
+		p = put_text(text, "ACTIVE, designed for fs = ");
+		p = put_uint(p, mixer_fs());
+		(void)put_text(p, " Hz");
+		text1x(8U, MIX_STATUS_Y, text, GREEN, BLACK);
+	}
+}
+
+// One crossover value, centred between its - and + buttons
+static void draw_fc_value(uint16_t y, uint32_t hz) {
+	char text[12];
+	uint16_t tw;
+
+	(void)put_text(put_uint(text, hz), " Hz");
+	tw = text_len(text) * 12U;
+	lcd_fillRect(56U, y, 183U, y + 23U, BLACK);
+	text2x(56U + (128U - tw) / 2U, y + 4U, text, WHITE, BLACK);
+}
+
+static void draw_crossovers(void) {
+	text1x(8U, MIX_FC_LABEL_Y, "CROSSOVERS (+-50 %)", LIGHT_GRAY, BLACK);
+	draw_button(&btn_fc1_down, "-", WHITE, NAVY);
+	draw_button(&btn_fc1_up, "+", WHITE, NAVY);
+	draw_button(&btn_fc2_down, "-", WHITE, NAVY);
+	draw_button(&btn_fc2_up, "+", WHITE, NAVY);
+	draw_fc_value(btn_fc1_down.y0, mixer_fc1());
+	draw_fc_value(btn_fc2_down.y0, mixer_fc2());
+}
+
+// "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  CLIP 0"
+static void draw_mixer_stats(void) {
+	char text[48];
+	char *p;
+	uint32_t budget;
+	uint32_t used;
+
+	lcd_fillRect(0U, MIX_STATS_Y, 239U, MIX_STATS_Y + 17U, BLACK);
+	if (stat_rate_hz == 0U) {
+		text1x(8U, MIX_STATS_Y, "NO CLOCK", LIGHT_GRAY, BLACK);
+		return;
+	}
+
+	budget = SYSCLK_HZ / stat_rate_hz;
+	used = stat_isr_cycles + ISR_ENTRY_EXIT_CYCLES;
+	p = put_text(text, "ISR ");
+	p = put_uint(p, used);
+	p = put_text(p, "/");
+	p = put_uint(p, budget);
+	p = put_text(p, " cycles = ");
+	p = put_uint(p, (used * 100U) / budget);
+	(void)put_text(p, "%");
+	text1x(8U, MIX_STATS_Y, text, WHITE, BLACK);
+
+	p = put_text(text, "fs ");
+	p = put_uint(p, stat_rate_hz);
+	p = put_text(p, " Hz  LATE ");
+	p = put_uint(p, audio_late_edges);
+	p = put_text(p, "  CLIP ");
+	(void)put_uint(p, sampling_clips);
+	text1x(8U, MIX_STATS_Y + 10U, text, WHITE, BLACK);
+}
+
+static void draw_mixer_page(void) {
+	uint32_t b;
+
+	lcd_fillScreen(BLACK);
+	draw_title("3-BAND MIXER");
+	draw_mixer_status();
+	for (b = 0U; b < MIXER_BANDS; b++) {
+		draw_gain_row(b);
+	}
+	draw_crossovers();
+	draw_mixer_stats();
+	draw_button(&btn_mix_back, "BACK", WHITE, DARK_CYAN);
+	draw_button(&btn_mix_flat, "FLAT", WHITE, DARK_CYAN);
+}
+
+// Tap position on a bar -> gain, snapped to 0.05
+static void set_gain_from_x(uint32_t band, uint16_t x) {
+	uint32_t pos = (x > MIX_BAR_X0 + 1U) ? (uint32_t)(x - (MIX_BAR_X0 + 1U)) : 0U;
+	uint32_t h;
+
+	if (pos > MIX_BAR_W) {
+		pos = MIX_BAR_W;
+	}
+	h = (pos * GAIN_MAX_H + MIX_BAR_W / 2U) / MIX_BAR_W;
+	h = ((h + GAIN_STEP_H / 2U) / GAIN_STEP_H) * GAIN_STEP_H;
+
+	gain_h[band] = h;
+	mixer_set_gain(band, gain_q14(h));
+	draw_gain_row(band);
+}
+
+// New crossovers: redesign the filters, then redraw what shows them
+static void set_crossovers(uint32_t fc1, uint32_t fc2) {
+	uint32_t b;
+
+	if (mixer_set_crossovers(fc1, fc2, mixer_fs())) {
+		draw_fc_value(btn_fc1_down.y0, mixer_fc1());
+		draw_fc_value(btn_fc2_down.y0, mixer_fc2());
+		for (b = 0U; b < MIXER_BANDS; b++) {
+			draw_gain_row(b);		// the labels show the crossovers
+		}
+	}
+}
+
+static void mixer_touch(uint16_t x, uint16_t y) {
+	uint32_t b;
+	uint16_t y0;
+
+	if (hit(&btn_mix_back, x, y)) {
+		show_page(PAGE_MAIN);
+		return;
+	}
+	if (hit(&btn_mix_flat, x, y)) {
+		for (b = 0U; b < MIXER_BANDS; b++) {
+			gain_h[b] = 100U;
+			mixer_set_gain(b, MIXER_GAIN_ONE);
+			draw_gain_row(b);
+		}
+		set_crossovers(MIXER_FC1_DEFAULT, MIXER_FC2_DEFAULT);
+		return;
+	}
+
+	// Gain bars, with a few pixels of slack above and below each bar
+	for (b = 0U; b < MIXER_BANDS; b++) {
+		y0 = (uint16_t)(MIX_ROW_Y0 + b * MIX_ROW_PITCH);
+		if ((y + 6U >= y0 + MIX_BAR_TOP) && (y <= y0 + MIX_BAR_BOT + 3U) &&
+		    (x >= MIX_BAR_X0) && (x <= MIX_BAR_X1)) {
+			set_gain_from_x(b, x);
+			return;
+		}
+	}
+
+	// Crossover buttons. mixer_set_crossovers() refuses anything out of range
+	if (hit(&btn_fc1_down, x, y)) {
+		set_crossovers(mixer_fc1() - FC1_STEP_HZ, mixer_fc2());
+	} else if (hit(&btn_fc1_up, x, y)) {
+		set_crossovers(mixer_fc1() + FC1_STEP_HZ, mixer_fc2());
+	} else if (hit(&btn_fc2_down, x, y)) {
+		set_crossovers(mixer_fc1(), mixer_fc2() - FC2_STEP_HZ);
+	} else if (hit(&btn_fc2_up, x, y)) {
+		set_crossovers(mixer_fc1(), mixer_fc2() + FC2_STEP_HZ);
+	}
+}
+
+// Every half second: measure the real sample rate and the longest ISR. If the
+// mixer is on and the measured rate is more than 1 % from the rate its filters
+// were designed for, redesign them, so the crossovers land where the UI says.
+// Our clock is an RC oscillator, so the real rate isn't exactly 49906 Hz
+#define STATS_PERIOD_CYCLES	(SYSCLK_HZ / 2U)
+
+static void stats_update(void) {
+	uint32_t now = dbg_cycles();
+	uint32_t elapsed = now - stat_last_tick;
+	uint32_t edges;
+	uint32_t fs_nominal = rate_hz(RATE_FX_8);
+	uint32_t fs_design;
+
+	if (elapsed < STATS_PERIOD_CYCLES) {
+		return;
+	}
+	edges = extclk_edges;
+	stat_rate_hz = (uint32_t)((((uint64_t)(edges - stat_last_edges) * SYSCLK_HZ) + elapsed / 2U) / elapsed);
+	stat_last_edges = edges;
+	stat_last_tick = now;
+
+	stat_isr_cycles = audio_max_cycles;
+	audio_max_cycles = 0U;
+
+	fs_design = mixer_fs();
+	if (mixer_is_active() &&
+	    (stat_rate_hz > fs_nominal / 2U) && (stat_rate_hz < fs_nominal + fs_nominal / 2U) &&
+	    ((stat_rate_hz > fs_design + fs_design / 100U) || (stat_rate_hz < fs_design - fs_design / 100U))) {
+		(void)mixer_set_crossovers(mixer_fc1(), mixer_fc2(), stat_rate_hz);
+		if (page == PAGE_MIXER) {
+			draw_mixer_status();
+		}
+	}
+
+	if (page == PAGE_MIXER) {
+		draw_mixer_stats();
+	}
+}
+
 static void show_page(page_t p) {
+	page_t from = page;
+
 	page = p;
 	switch (p) {
 	case PAGE_MIXER:
-		draw_placeholder_page("MIXER", "Ext A: 3-band mixer");
+		draw_mixer_page();
 		break;
 	case PAGE_SPECTRUM:
 		draw_placeholder_page("SPECTRUM", "Ext B: FFT spectrum");
 		break;
 	default:
+		// Clear what the other page drew. At start-up main.c has just cleared it
+		if (from != PAGE_MAIN) {
+			lcd_fillScreen(BLACK);
+		}
 		draw_main_page();
 		break;
 	}
@@ -194,9 +525,17 @@ static void select_rate(rate_t r) {
 	if (r == rate_get()) {
 		return;		// already selected: no command, no redraw
 	}
+
+	// The mixer only fits the cycle budget at fx/8. Switch it off before a faster
+	// rate starts, and on only after the slow rate is running (the redraw below
+	// takes milliseconds, far longer than the clock board needs to switch)
+	if (r != RATE_FX_8) {
+		mixer_set_active(0);
+	}
 	rate_set(r);
 	draw_status();
 	draw_rate_buttons();
+	mixer_set_active(r == RATE_FX_8);
 }
 
 static void toggle_enable(void) {
@@ -209,6 +548,10 @@ static void toggle_enable(void) {
 void ui_touch(uint16_t x, uint16_t y) {
 	rate_t r;
 
+	if (page == PAGE_MIXER) {
+		mixer_touch(x, y);
+		return;
+	}
 	if (page != PAGE_MAIN) {
 		if (hit(&btn_back, x, y)) {
 			show_page(PAGE_MAIN);
@@ -284,6 +627,13 @@ static uint32_t buttons_pressed(void) {
 
 // ---------------------------------------------------------------------------
 void ui_init(void) {
+	// Mixer: filters designed for the nominal fx/8 rate until stats_update()
+	// measures the real one. On only if the clock board is at fx/8
+	mixer_init(rate_hz(RATE_FX_8));
+	mixer_set_active(rate_get() == RATE_FX_8);
+	stat_last_tick = dbg_cycles();
+	stat_last_edges = extclk_edges;
+
 	touch_init();
 	buttons_init();
 	show_page(PAGE_MAIN);
@@ -296,6 +646,8 @@ void ui_poll(void) {
 	if (touch_poll(&tx, &ty)) {
 		ui_touch(tx, ty);
 	}
+
+	stats_update();
 
 	if (pressed != 0U) {
 		if (page != PAGE_MAIN) {

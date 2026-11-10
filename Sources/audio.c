@@ -8,6 +8,8 @@ volatile uint32_t audio_overruns = 0U;
 volatile uint32_t audio_late_edges = 0U;
 volatile uint32_t audio_max_cycles = 0U;
 
+audio_process_t volatile audio_process = 0;
+
 // The sample to send on the next edge. Only the ISR touches this
 static uint32_t next_output = DAC_MID_CODE;
 
@@ -29,6 +31,9 @@ void audio_init(void) {
 void EXTI15_10_IRQHandler(void) {
 	uint32_t start = dbg_cycles();
 	uint32_t cycles;
+	uint32_t code = 0U;
+	uint32_t have_sample = 0U;
+	audio_process_t process;
 
 	dbg_scope_high();				// PF8 stays high while the ISR runs
 
@@ -42,13 +47,23 @@ void EXTI15_10_IRQHandler(void) {
 	// Collect the conversion started on the last edge. We never wait for the ADC:
 	// if it isn't done, the clock is too fast, so count it and repeat the last sample
 	if (adc_is_done()) {
-		next_output = adc_result();
+		code = adc_result();
+		have_sample = 1U;
 	} else {
 		audio_overruns++;
 	}
 
-	// Sample the input for the next edge. This is the sampling instant
+	// Sample the input for the next edge. This is the sampling instant. It comes
+	// before any processing, so however long the mixer takes, we always sample at
+	// the same time after the edge
 	adc_start();
+
+	// Passthrough, or the processing installed in audio_process (ACTIVE_TEST 10).
+	// The result goes to the DAC on the next edge
+	if (have_sample) {
+		process = audio_process;
+		next_output = (process != 0) ? process(code) : code;
+	}
 
 	// A pending flag here means the next edge came before we finished
 	if (EXTI->PR & EXTCLK_PR_FLAG) {

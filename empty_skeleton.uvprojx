@@ -549,6 +549,31 @@
               <FileType>5</FileType>
               <FilePath>.\Sources\ui\ui.h</FilePath>
             </File>
+            <File>
+              <FileName>mixer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Sources\ui\mixer.c</FilePath>
+            </File>
+            <File>
+              <FileName>mixer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Sources\ui\mixer.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Sampling</GroupName>
+          <Files>
+            <File>
+              <FileName>sampling.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Sources\Sampling\sampling.c</FilePath>
+            </File>
+            <File>
+              <FileName>sampling.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Sources\Sampling\sampling.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
