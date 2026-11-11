@@ -31,7 +31,7 @@ void clock_spi_init(void);
 // Sends one byte as a complete transaction. Any byte goes out, including
 // invalid ones, so the demo can show the board ignoring them. Returns the byte
 // received on MISO at the same time: meaningless with the clock board (it never
-// talks back), but the MOSI-to-MISO loopback test (ACTIVE_TEST 9) checks it
+// talks back), but it is useful for a MOSI-to-MISO loopback check
 uint8_t clock_spi_send(uint8_t cmd);
 
 #endif

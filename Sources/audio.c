@@ -59,7 +59,7 @@ void EXTI15_10_IRQHandler(void) {
 	// the same time after the edge
 	adc_start();
 
-	// Passthrough, or the processing installed in audio_process (ACTIVE_TEST 10).
+	// Passthrough, or the processing installed in audio_process (Sampling/sampling.c).
 	// The result goes to the DAC on the next edge
 	if (have_sample) {
 		process = audio_process;

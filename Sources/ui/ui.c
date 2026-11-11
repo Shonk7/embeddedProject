@@ -309,7 +309,7 @@ static void draw_mixer_status(void) {
 
 	lcd_fillRect(0U, MIX_STATUS_Y, 239U, MIX_STATUS_Y + 9U, BLACK);
 	if (!sampling_is_running()) {
-		text1x(8U, MIX_STATUS_Y, "OFF: build with ACTIVE_TEST 10", RED, BLACK);
+		text1x(8U, MIX_STATUS_Y, "OFF: Sampling not installed", RED, BLACK);
 	} else if (!mixer_is_active()) {
 		text1x(8U, MIX_STATUS_Y, "BYPASSED: mixer runs at 50 kHz only", YELLOW, BLACK);
 	} else {
@@ -481,9 +481,11 @@ static void stats_update(void) {
 #define SPEC_RANGE_DB10		800		// 80 dB from top to bottom
 #define SPEC_SHOW_HZ		20000U	// the spec's 0 to 20 kHz
 
-// 50 frames a second. The spec asks for at least 30, and this leaves margin at fx,
-// where the ISR takes a big share of the CPU
-#define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 50U)
+// 40 frames a second (25 ms per frame). The spec asks for at least 30. 40 leaves
+// more slack per frame than 50 did, so the occasional slow pass (text redraw,
+// stats, many bars changing) no longer pushes a frame into the next slot, and
+// still stays well above 30 at fx, where the ISR takes a big share of the CPU
+#define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 40U)
 #define SPEC_TIMEOUT_CYCLES	(SYSCLK_HZ / 10U)	// a block takes 2.6 ms: 100 ms = no clock
 #define SPEC_TEXT_CYCLES	(SYSCLK_HZ / 2U)	// numbers and labels twice a second
 
@@ -564,7 +566,7 @@ static void spec_draw_labels(void) {
 	}
 }
 
-// "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "50 FRAMES/S  PF9 = J1101 pin 4"
+// "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "40 FRAMES/S  PF9 = J1101 pin 4"
 static void spec_draw_text(void) {
 	char text[44];
 	char *p;

@@ -37,9 +37,6 @@ void touch_map(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y);
 // A press must be released before the next one counts
 int touch_poll(uint16_t *x, uint16_t *y);
 
-// ACTIVE_TEST 5: shows raw values, min/max and a dot where the touch lands.
-// Never returns
-void touch_calibration_screen(void);
 
 // Last raw reading, for the Keil Watch window
 extern volatile uint16_t touch_raw_x;

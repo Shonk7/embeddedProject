@@ -314,10 +314,10 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>4</Optim>
+            <Optim>6</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
-            <OneElfS>0</OneElfS>
+            <OneElfS>1</OneElfS>
             <Strict>0</Strict>
             <EnumInt>0</EnumInt>
             <PlainCh>0</PlainCh>
@@ -428,16 +428,6 @@
               <FileName>dac.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\sources\dac.h</FilePath>
-            </File>
-            <File>
-              <FileName>tests.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\sources\tests.c</FilePath>
-            </File>
-            <File>
-              <FileName>tests.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\sources\tests.h</FilePath>
             </File>
             <File>
               <FileName>extclk.c</FileName>

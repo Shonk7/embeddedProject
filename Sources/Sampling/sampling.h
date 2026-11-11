@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// The step between the ADC and the DAC for every sample (ACTIVE_TEST 10 only).
+// The step between the ADC and the DAC for every sample (installed at start-up).
 // audio.c still does the sampling itself: the external clock edge fires the ISR,
 // which starts the ADC. This module takes each sample the ISR collects and:
 //   1. counts samples that hit the ADC's limits (input too loud: clipping)
@@ -20,8 +20,8 @@
 // Call after audio_init(). Plugs sampling_process() into the audio ISR
 void sampling_init(void);
 
-// 1 if sampling_init() has run (ACTIVE_TEST 10), so the UI can say whether the
-// mixer is in this build
+// 1 if sampling_init() has run, so the UI can say whether the mixer path is
+// installed
 int sampling_is_running(void);
 
 // ADC samples within SAMPLING_CLIP_MARGIN codes of 0 or 4095, counted while the
