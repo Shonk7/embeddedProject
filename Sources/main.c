@@ -9,13 +9,17 @@
 #include "ui/rate_ctrl.h"
 #include "ui/ui.h"
 #include "ui/touch.h"
+#include "Sampling/sampling.h"
 
 // What to run:
 //   4 = the full system: touchscreen, audio passthrough and clock board control
 //   2 = ADC test, 3 = DAC test, 5 = touch calibration, 6 = audio stats,
 //   7 = external clock count, 8 = SPI command test,
 //   9 = SPI loopback (no clock board, jumper J901 pin 5 to pin 3)
-#define ACTIVE_TEST		4
+//  10 = the full system plus Sampling and the 3-band mixer (Ext A). Same as 4, but
+//       each sample goes through Sources/Sampling and the mixer at fx/8. Any other
+//       number leaves Sampling out, so audio is plain passthrough
+#define ACTIVE_TEST		10
 // Test comment
 
 int main(void) {
@@ -52,6 +56,14 @@ int main(void) {
 	test_spi();
 #elif ACTIVE_TEST == 9
 	test_spi_loopback();
+#elif ACTIVE_TEST == 10
+	// Full system with the mixer. Sampling plugs into the audio ISR, then the UI
+	// switches the mixer on whenever the rate is fx/8. Audio starts as passthrough
+	// until ui_init() has set up the mixer
+	audio_init();
+	sampling_init();
+	rate_init();
+	ui_init();
 #else
 	// Full system. Audio starts first and then runs by itself in the ISR. rate_init
 	// puts the clock board in a known state over SPI (off, fx/8, on), then the UI

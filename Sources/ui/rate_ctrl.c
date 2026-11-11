@@ -76,6 +76,11 @@ void rate_enable(int on) {
 	leds_update();
 }
 
+void rate_send_invalid(void) {
+	clock_last_cmd = CMD_INVALID_TEST;
+	clock_spi_send(CMD_INVALID_TEST);
+}
+
 rate_t rate_get(void) {
 	return current_rate;
 }
