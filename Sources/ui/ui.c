@@ -38,7 +38,8 @@ static const box_t btn_back     = {   8, 272, 231, 303 };
 typedef enum {
 	PAGE_MAIN = 0,
 	PAGE_MIXER,
-	PAGE_SPECTRUM
+	PAGE_SPECTRUM,
+	PAGE_STATS
 } page_t;
 
 static page_t page = PAGE_MAIN;
@@ -156,7 +157,7 @@ static void draw_enable_button(void) {
 
 // Test button for the invalid-command requirement
 static void draw_invalid_button(void) {
-	draw_button(&btn_invalid, "D3 BAD", WHITE, MAROON);
+	draw_button(&btn_invalid, "BAD RATE", WHITE, MAROON);
 }
 
 static void draw_main_page(void) {
@@ -165,6 +166,7 @@ static void draw_main_page(void) {
 
 	lcd_drawRect(STATUS_X0, STATUS_Y0, STATUS_X1, STATUS_Y1, LIGHT_GRAY);
 	text1x(16U, 46U, "SAMPLE RATE", LIGHT_GRAY, BLACK);
+	text1x(150U, 46U, "TAP FOR STATS", DARK_GRAY, BLACK);
 	draw_status();
 
 	text1x(8U, 104U, "SELECT RATE", LIGHT_GRAY, BLACK);
@@ -324,9 +326,9 @@ static void draw_mixer_status(void) {
 	} else if (!mixer_is_active()) {
 		text1x(8U, MIX_STATUS_Y, "BYPASSED: mixer runs at 50 kHz only", YELLOW, BLACK);
 	} else {
-		p = put_text(text, "ACTIVE, designed for fs = ");
-		p = put_uint(p, mixer_fs());
-		(void)put_text(p, " Hz");
+		p = put_text(text, "ACTIVE, designed for fs = 50kHz ");
+		//p = put_uint(p, mixer_fs());
+		//(void)put_text(p, " Hz");
 		text1x(8U, MIX_STATUS_Y, text, GREEN, BLACK);
 	}
 }
@@ -370,9 +372,11 @@ static void draw_mixer_stats(void) {
 
 	p = put_text(text, "fs ");
 	p = put_uint(p, stat_rate_hz);
-	p = put_text(p, " Hz  LATE ");
+	p = put_text(p, " Hz LATE ");
 	p = put_uint(p, audio_late_edges);
-	p = put_text(p, "  CLIP ");
+	p = put_text(p, " OVR ");
+	p = put_uint(p, audio_overruns);
+	p = put_text(p, " CLIP ");
 	(void)put_uint(p, sampling_clips);
 	text1x(8U, MIX_STATS_Y + 10U, text, WHITE, BLACK);
 }
@@ -436,6 +440,115 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Stats page: the no-dropped-samples evidence, live, in the full system. Open it
+// by tapping the SAMPLE RATE box on the main page. Counts are shown since the
+// last RESET. Main keeps baselines and subtracts them, so it never writes the
+// ISR's own counters (no race with the ISR)
+// ---------------------------------------------------------------------------
+#define ST_ROW_Y0		40U
+#define ST_ROW_PITCH	22U
+#define ST_VALUE_X		112U	// 10 big digits fit: 112 + 10 x 12 = 232
+#define ST_MIXER_Y		224U
+#define ST_VERDICT_Y	244U
+
+static const box_t btn_st_reset = {   8, 272, 115, 303 };
+static const box_t btn_st_back  = { 124, 272, 231, 303 };
+
+// Values at the last RESET
+static uint32_t base_edges;
+static uint32_t base_overruns;
+static uint32_t base_late;
+static uint32_t base_clips;
+static uint32_t stat_isr_peak;		// longest ISR since RESET, without entry/exit
+
+static const char * const st_labels[] = {
+	"RATE (Hz)", "EDGES", "OVERRUNS", "LATE EDGES",
+	"ISR PEAK (cyc)", "BUDGET (cyc)", "ISR LOAD (%)", "CLIPS"
+};
+#define ST_ROWS		(sizeof(st_labels) / sizeof(st_labels[0]))
+#define ST_OVERRUNS	2U
+#define ST_LATE		3U
+
+static void stats_reset(void) {
+	base_edges = extclk_edges;
+	base_overruns = audio_overruns;
+	base_late = audio_late_edges;
+	base_clips = sampling_clips;
+	stat_isr_peak = 0U;
+}
+
+// The numbers and the verdict line. Called every half second while shown
+static void draw_stats_values(void) {
+	uint32_t v[ST_ROWS];
+	uint32_t overruns = audio_overruns - base_overruns;
+	uint32_t late = audio_late_edges - base_late;
+	uint32_t budget = (stat_rate_hz != 0U) ? (SYSCLK_HZ / stat_rate_hz) : 0U;
+	uint32_t used = stat_isr_peak + ISR_ENTRY_EXIT_CYCLES;
+	uint32_t i;
+	uint16_t y;
+	char text[12];
+
+	v[0] = stat_rate_hz;
+	v[1] = extclk_edges - base_edges;	// burst test: must rise by exactly N
+	v[ST_OVERRUNS] = overruns;			// ADC not done: a repeated sample
+	v[ST_LATE] = late;					// edge during the ISR: risk of a lost sample
+	v[4] = used;
+	v[5] = budget;
+	v[6] = (budget != 0U) ? ((used * 100U) / budget) : 0U;
+	v[7] = sampling_clips - base_clips;
+
+	for (i = 0U; i < ST_ROWS; i++) {
+		y = (uint16_t)(ST_ROW_Y0 + i * ST_ROW_PITCH);
+		(void)put_uint(text, v[i]);
+		lcd_fillRect(ST_VALUE_X, y, 231U, y + 15U, BLACK);
+		text2x(ST_VALUE_X, y, text,
+		       (((i == ST_OVERRUNS) || (i == ST_LATE)) && (v[i] != 0U)) ? RED : WHITE, BLACK);
+	}
+
+	lcd_fillRect(0U, ST_VERDICT_Y, 239U, ST_VERDICT_Y + 15U, BLACK);
+	if (stat_rate_hz == 0U) {
+		text2x(8U, ST_VERDICT_Y, "NO CLOCK", YELLOW, BLACK);
+	} else if ((overruns == 0U) && (late == 0U)) {
+		text2x(8U, ST_VERDICT_Y, "NO DROPPED SAMPLES", GREEN, BLACK);
+	} else {
+		text2x(8U, ST_VERDICT_Y, "SAMPLES DROPPED", RED, BLACK);
+	}
+}
+
+static void draw_stats_page(void) {
+	uint32_t i;
+
+	lcd_fillScreen(BLACK);
+	draw_title("STATS");
+	for (i = 0U; i < ST_ROWS; i++) {
+		text1x(8U, (uint16_t)(ST_ROW_Y0 + i * ST_ROW_PITCH + 4U), st_labels[i], LIGHT_GRAY, BLACK);
+	}
+
+	// Which path the samples take right now
+	text1x(8U, ST_MIXER_Y, "AUDIO:", LIGHT_GRAY, BLACK);
+	if (!sampling_is_running()) {
+		text1x(50U, ST_MIXER_Y, "PASSTHROUGH (no Sampling)", WHITE, BLACK);
+	} else if (mixer_is_active()) {
+		text1x(50U, ST_MIXER_Y, "SAMPLING + MIXER (fx/8)", GREEN, BLACK);
+	} else {
+		text1x(50U, ST_MIXER_Y, "SAMPLING, MIXER BYPASSED", YELLOW, BLACK);
+	}
+
+	draw_stats_values();
+	draw_button(&btn_st_reset, "RESET", WHITE, MAROON);
+	draw_button(&btn_st_back, "BACK", WHITE, DARK_CYAN);
+}
+
+static void stats_touch(uint16_t x, uint16_t y) {
+	if (hit(&btn_st_back, x, y)) {
+		show_page(PAGE_MAIN);
+	} else if (hit(&btn_st_reset, x, y)) {
+		stats_reset();
+		draw_stats_values();
+	}
+}
+
 // Every half second: measure the real sample rate and the longest ISR. If the
 // mixer is on and the measured rate is more than 1 % from the rate its filters
 // were designed for, redesign them, so the crossovers land where the UI says.
@@ -459,6 +572,9 @@ static void stats_update(void) {
 
 	stat_isr_cycles = audio_max_cycles;
 	audio_max_cycles = 0U;
+	if (stat_isr_cycles > stat_isr_peak) {
+		stat_isr_peak = stat_isr_cycles;
+	}
 
 	fs_design = mixer_fs();
 	if (mixer_is_active() &&
@@ -472,6 +588,8 @@ static void stats_update(void) {
 
 	if (page == PAGE_MIXER) {
 		draw_mixer_stats();
+	} else if (page == PAGE_STATS) {
+		draw_stats_values();
 	}
 }
 
@@ -485,6 +603,9 @@ static void show_page(page_t p) {
 		break;
 	case PAGE_SPECTRUM:
 		draw_placeholder_page("SPECTRUM", "Ext B: FFT spectrum");
+		break;
+	case PAGE_STATS:
+		draw_stats_page();
 		break;
 	default:
 		// Clear what the other page drew. At start-up main.c has just cleared it
@@ -537,6 +658,10 @@ void ui_touch(uint16_t x, uint16_t y) {
 		mixer_touch(x, y);
 		return;
 	}
+	if (page == PAGE_STATS) {
+		stats_touch(x, y);
+		return;
+	}
 	if (page != PAGE_MAIN) {
 		if (hit(&btn_back, x, y)) {
 			show_page(PAGE_MAIN);
@@ -558,6 +683,8 @@ void ui_touch(uint16_t x, uint16_t y) {
 		show_page(PAGE_MIXER);
 	} else if (hit(&btn_spectrum, x, y)) {
 		show_page(PAGE_SPECTRUM);
+	} else if ((x >= STATUS_X0) && (x <= STATUS_X1) && (y >= STATUS_Y0) && (y <= STATUS_Y1)) {
+		show_page(PAGE_STATS);			// tap the SAMPLE RATE box
 	}
 }
 
@@ -620,6 +747,7 @@ void ui_init(void) {
 	mixer_set_active(rate_get() == RATE_FX_8);
 	stat_last_tick = dbg_cycles();
 	stat_last_edges = extclk_edges;
+	stats_reset();		// stats page counts from start-up until the first RESET
 
 	touch_init();
 	buttons_init();
