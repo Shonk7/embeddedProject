@@ -1,6 +1,7 @@
 #include "../../Headers/stm32f103xe.h"
 #include "../../LCD/lcd_grph.h"
 #include "../../LCD/font5x7.h"
+#include "../../LCD/ili9341.h"
 #include "../clock.h"
 #include "../debug.h"
 #include "../audio.h"
@@ -85,6 +86,46 @@ static void text2x(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_co
 static void text1x(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_color_t bg) {
 	lcd_fontColor(fg, bg);
 	lcd_putString(x, y, (unsigned char *)s);
+}
+
+// Same 6 x 8 font as text1x, about 10 times faster. lcd_putString draws every
+// pixel with its own lcd_fillRect, which sets up an address window each time
+// (11 bus writes per pixel). This sets one window per character and streams its
+// 48 pixels. The panel fills a window left to right, then top to bottom
+// (LCD_MAC = 0x08 in lcd_ili9341.c). Used where text is redrawn while the
+// spectrum is running, so a text update can't push a frame late
+static void text_fast(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_color_t bg) {
+	uint16_t row;
+	uint16_t col;
+	unsigned char ch;
+	unsigned char bits;
+
+	while ((*s != '\0') && (x <= 234U)) {
+		ch = (unsigned char)*s++;
+		if ((ch < 0x20U) || (ch > 0x7FU)) {
+			ch = 0x20U;
+		}
+
+		ili9341_WriteReg(LCD_COLUMN_ADDR);
+		ili9341_WriteData(x >> 8);
+		ili9341_WriteData(x & 0xFFU);
+		ili9341_WriteData((x + 5U) >> 8);
+		ili9341_WriteData((x + 5U) & 0xFFU);
+		ili9341_WriteReg(LCD_PAGE_ADDR);
+		ili9341_WriteData(y >> 8);
+		ili9341_WriteData(y & 0xFFU);
+		ili9341_WriteData((y + 7U) >> 8);
+		ili9341_WriteData((y + 7U) & 0xFFU);
+		ili9341_WriteReg(LCD_GRAM);
+
+		for (row = 0U; row < 8U; row++) {
+			bits = font5x7[ch - 0x20U][row];
+			for (col = 0U; col < 6U; col++) {
+				ili9341_WriteData((bits & (0x80U >> col)) ? fg : bg);
+			}
+		}
+		x += 6U;
+	}
 }
 
 static void draw_button(const box_t *b, const char *label, lcd_color_t fg, lcd_color_t bg) {
@@ -560,7 +601,7 @@ static void spec_draw_labels(void) {
 		if (x > 220U) {
 			x = 220U;
 		}
-		text1x((uint16_t)x, SPEC_LABEL_Y, label[i], LIGHT_GRAY, BLACK);
+		text_fast((uint16_t)x, SPEC_LABEL_Y, label[i], LIGHT_GRAY, BLACK);
 	}
 }
 
@@ -572,7 +613,7 @@ static void spec_draw_text(void) {
 
 	lcd_fillRect(0U, SPEC_INFO_Y, 239U, SPEC_PEAK_Y + 7U, BLACK);
 	if (spec_fs_hz == 0U) {
-		text1x(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
+		text_fast(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
 	} else {
 		p = put_text(text, "fs ");
 		p = put_uint(p, spec_fs_hz);
@@ -580,7 +621,7 @@ static void spec_draw_text(void) {
 		p = put_uint(p, (spec_fs_hz + FFT_N / 2U) / FFT_N);
 		p = put_text(p, " Hz  x");
 		(void)put_uint(p, capture_decimation());
-		text1x(8U, SPEC_INFO_Y, text, WHITE, BLACK);
+		text_fast(8U, SPEC_INFO_Y, text, WHITE, BLACK);
 
 		db = (spec_peak_db10 < 0) ? -spec_peak_db10 : spec_peak_db10;
 		p = put_text(text, "PEAK ");
@@ -588,13 +629,13 @@ static void spec_draw_text(void) {
 		p = put_text(p, (spec_peak_db10 < 0) ? " Hz  -" : " Hz  ");
 		p = put_uint(p, (uint32_t)(db / 10));
 		(void)put_text(p, " dB");
-		text1x(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
+		text_fast(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
 	}
 
 	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
 	p = put_uint(text, spec_fps);
 	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
-	text1x(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
+	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
 }
 
 static void draw_spectrum_page(void) {
@@ -711,15 +752,19 @@ static void spectrum_poll(void) {
 		capture_start(rate);
 		spec_waiting = 1;
 		spec_wait_start = now;
-	}
 
-	// Twice a second: frame rate, the numbers, and the frequency labels
-	if ((now - spec_text_tick) >= SPEC_TEXT_CYCLES) {
-		spec_fps = (uint32_t)(((uint64_t)spec_frames * SYSCLK_HZ) / (now - spec_text_tick));
-		spec_frames = 0U;
-		spec_text_tick = now;
-		spec_draw_text();
-		spec_draw_labels();
+		// Twice a second: frame rate, the numbers, and the frequency labels.
+		// Done here, while the ISR fills the block (2.6 ms we'd spend waiting
+		// anyway), so the text never pushes a frame past its 20 ms slot. Before
+		// this, a text update could land just before a frame and make it late:
+		// a double-length pulse on PF9 about twice a second
+		if ((now - spec_text_tick) >= SPEC_TEXT_CYCLES) {
+			spec_fps = (uint32_t)(((uint64_t)spec_frames * SYSCLK_HZ) / (now - spec_text_tick));
+			spec_frames = 0U;
+			spec_text_tick = now;
+			spec_draw_text();
+			spec_draw_labels();
+		}
 	}
 }
 
