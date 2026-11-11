@@ -24,7 +24,8 @@ static const box_t btn_rate[RATE_COUNT] = {
 	{  8, 168, 115, 213 },	// fx/4  bottom left
 	{ 124, 168, 231, 213 }	// fx/8  bottom right
 };
-static const box_t btn_enable   = {   8, 224, 231, 263 };
+static const box_t btn_enable   = {   8, 224, 115, 263 };	// left half
+static const box_t btn_invalid  = { 124, 224, 231, 263 };	// right half: sends 0xD3
 static const box_t btn_mixer    = {   8, 272, 115, 303 };
 static const box_t btn_spectrum = { 124, 272, 231, 303 };
 static const box_t btn_back     = {   8, 272, 231, 303 };
@@ -109,6 +110,8 @@ static int hit(const box_t *b, uint16_t x, uint16_t y) {
 // Main page
 // ---------------------------------------------------------------------------
 static void draw_status(void) {
+	char cmd_text[] = "LAST CMD 0x00";
+
 	// Clear the value line, because "99.81 kHz" is shorter than "399.25 kHz"
 	lcd_fillRect(STATUS_X0 + 1U, 58U, STATUS_X1 - 1U, 73U, BLACK);
 	text2x(16U, 58U, rate_label(rate_get()), WHITE, BLACK);
@@ -119,6 +122,12 @@ static void draw_status(void) {
 	} else {
 		text1x(16U, 82U, "CLOCK: STOPPED", RED, BLACK);
 	}
+
+	// Last byte sent to the clock board, e.g. "LAST CMD 0xD3". After the invalid
+	// command this changes while the rate above stays the same
+	cmd_text[11] = "0123456789ABCDEF"[clock_last_cmd >> 4];
+	cmd_text[12] = "0123456789ABCDEF"[clock_last_cmd & 0xFU];
+	text1x(136U, 82U, cmd_text, LIGHT_GRAY, BLACK);
 }
 
 // Selected rate: green while running, yellow while stopped (the board holds
@@ -136,12 +145,18 @@ static void draw_rate_buttons(void) {
 	}
 }
 
+// Shows the action the button will do: CLKOFF while running, CLKON while stopped
 static void draw_enable_button(void) {
 	if (rate_is_enabled()) {
-		draw_button(&btn_enable, "STOP CLOCK", WHITE, RED);
+		draw_button(&btn_enable, "CLKOFF", WHITE, RED);
 	} else {
-		draw_button(&btn_enable, "START CLOCK", BLACK, GREEN);
+		draw_button(&btn_enable, "CLKON", BLACK, GREEN);
 	}
+}
+
+// Test button for the invalid-command requirement
+static void draw_invalid_button(void) {
+	draw_button(&btn_invalid, "D3 BAD", WHITE, MAROON);
 }
 
 static void draw_main_page(void) {
@@ -155,6 +170,7 @@ static void draw_main_page(void) {
 	text1x(8U, 104U, "SELECT RATE", LIGHT_GRAY, BLACK);
 	draw_rate_buttons();
 	draw_enable_button();
+	draw_invalid_button();
 
 	draw_button(&btn_mixer, "MIXER", WHITE, DARK_CYAN);
 	draw_button(&btn_spectrum, "SPECTRUM", WHITE, DARK_CYAN);
@@ -180,8 +196,9 @@ static void show_page(page_t p);
 
 // ---------------------------------------------------------------------------
 // Mixer page (Ext A). Three gain bars: tap a bar to set its gain, 0 to 2 in
-// steps of 0.05 (the white mark is 1.0). Crossover -/+ buttons (soft goal,
-// +-50 %). Two lines of live stats: ISR load, measured rate, late edges, clips
+// steps of 0.05 (the white mark is 1.0). The crossovers are fixed for the whole
+// project at 500 Hz and 4 kHz and are only displayed. Two lines of live stats:
+// ISR load, measured rate, late edges, clips
 // ---------------------------------------------------------------------------
 #define MIX_STATUS_Y	36U
 #define MIX_ROW_Y0		50U		// top of the first gain row
@@ -198,16 +215,10 @@ static void show_page(page_t p);
 // Gains are kept here in hundredths (100 = 1.00) so the display is exact
 #define GAIN_MAX_H		200U
 #define GAIN_STEP_H		5U		// 0.05 per step
-#define FC1_STEP_HZ		50U		// 250 to 750 Hz in 11 steps
-#define FC2_STEP_HZ		250U	// 2000 to 6000 Hz in 17 steps
 
 // Interrupt entry and exit, which the ISR's own cycle count can't see (Stage 5)
 #define ISR_ENTRY_EXIT_CYCLES	30U
 
-static const box_t btn_fc1_down = {   8, 198,  55, 221 };
-static const box_t btn_fc1_up   = { 184, 198, 231, 221 };
-static const box_t btn_fc2_down = {   8, 226,  55, 249 };
-static const box_t btn_fc2_up   = { 184, 226, 231, 249 };
 static const box_t btn_mix_back = {   8, 272, 115, 303 };
 static const box_t btn_mix_flat = { 124, 272, 231, 303 };
 
@@ -320,25 +331,17 @@ static void draw_mixer_status(void) {
 	}
 }
 
-// One crossover value, centred between its - and + buttons
-static void draw_fc_value(uint16_t y, uint32_t hz) {
-	char text[12];
-	uint16_t tw;
-
-	(void)put_text(put_uint(text, hz), " Hz");
-	tw = text_len(text) * 12U;
-	lcd_fillRect(56U, y, 183U, y + 23U, BLACK);
-	text2x(56U + (128U - tw) / 2U, y + 4U, text, WHITE, BLACK);
-}
-
+// Fixed crossovers, shown for reference: "500 Hz / 4000 Hz"
 static void draw_crossovers(void) {
-	text1x(8U, MIX_FC_LABEL_Y, "CROSSOVERS (+-50 %)", LIGHT_GRAY, BLACK);
-	draw_button(&btn_fc1_down, "-", WHITE, NAVY);
-	draw_button(&btn_fc1_up, "+", WHITE, NAVY);
-	draw_button(&btn_fc2_down, "-", WHITE, NAVY);
-	draw_button(&btn_fc2_up, "+", WHITE, NAVY);
-	draw_fc_value(btn_fc1_down.y0, mixer_fc1());
-	draw_fc_value(btn_fc2_down.y0, mixer_fc2());
+	char text[24];
+	char *p;
+
+	text1x(8U, MIX_FC_LABEL_Y, "CROSSOVERS (FIXED)", LIGHT_GRAY, BLACK);
+	p = put_uint(text, mixer_fc1());
+	p = put_text(p, " Hz / ");
+	p = put_uint(p, mixer_fc2());
+	(void)put_text(p, " Hz");
+	text2x(8U, MIX_FC_LABEL_Y + 16U, text, WHITE, BLACK);
 }
 
 // "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  CLIP 0"
@@ -405,19 +408,6 @@ static void set_gain_from_x(uint32_t band, uint16_t x) {
 	draw_gain_row(band);
 }
 
-// New crossovers: redesign the filters, then redraw what shows them
-static void set_crossovers(uint32_t fc1, uint32_t fc2) {
-	uint32_t b;
-
-	if (mixer_set_crossovers(fc1, fc2, mixer_fs())) {
-		draw_fc_value(btn_fc1_down.y0, mixer_fc1());
-		draw_fc_value(btn_fc2_down.y0, mixer_fc2());
-		for (b = 0U; b < MIXER_BANDS; b++) {
-			draw_gain_row(b);		// the labels show the crossovers
-		}
-	}
-}
-
 static void mixer_touch(uint16_t x, uint16_t y) {
 	uint32_t b;
 	uint16_t y0;
@@ -432,7 +422,6 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 			mixer_set_gain(b, MIXER_GAIN_ONE);
 			draw_gain_row(b);
 		}
-		set_crossovers(MIXER_FC1_DEFAULT, MIXER_FC2_DEFAULT);
 		return;
 	}
 
@@ -444,17 +433,6 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 			set_gain_from_x(b, x);
 			return;
 		}
-	}
-
-	// Crossover buttons. mixer_set_crossovers() refuses anything out of range
-	if (hit(&btn_fc1_down, x, y)) {
-		set_crossovers(mixer_fc1() - FC1_STEP_HZ, mixer_fc2());
-	} else if (hit(&btn_fc1_up, x, y)) {
-		set_crossovers(mixer_fc1() + FC1_STEP_HZ, mixer_fc2());
-	} else if (hit(&btn_fc2_down, x, y)) {
-		set_crossovers(mixer_fc1(), mixer_fc2() - FC2_STEP_HZ);
-	} else if (hit(&btn_fc2_up, x, y)) {
-		set_crossovers(mixer_fc1(), mixer_fc2() + FC2_STEP_HZ);
 	}
 }
 
@@ -545,6 +523,13 @@ static void toggle_enable(void) {
 	draw_enable_button();
 }
 
+// Sends the invalid command, then redraws only the status box. The rate, clock
+// state and LEDs should all stay as they were; only LAST CMD changes to 0xD3
+static void send_invalid(void) {
+	rate_send_invalid();
+	draw_status();
+}
+
 void ui_touch(uint16_t x, uint16_t y) {
 	rate_t r;
 
@@ -567,6 +552,8 @@ void ui_touch(uint16_t x, uint16_t y) {
 	}
 	if (hit(&btn_enable, x, y)) {
 		toggle_enable();
+	} else if (hit(&btn_invalid, x, y)) {
+		send_invalid();
 	} else if (hit(&btn_mixer, x, y)) {
 		show_page(PAGE_MIXER);
 	} else if (hit(&btn_spectrum, x, y)) {

@@ -24,7 +24,9 @@
 #define MIXER_GAIN_ONE		16384U
 #define MIXER_GAIN_MAX		32768U
 
-// Crossovers (Hz). The spec wants 500 Hz and 4 kHz, adjustable by +-50 %
+// Crossovers (Hz). Fixed for the project at the spec's 500 Hz and 4 kHz. The
+// UI never changes them; mixer_set_crossovers() is only called again to redesign
+// for the measured sample rate. The MIN/MAX limits just reject bad values
 #define MIXER_FC1_DEFAULT	500U
 #define MIXER_FC1_MIN		250U
 #define MIXER_FC1_MAX		750U

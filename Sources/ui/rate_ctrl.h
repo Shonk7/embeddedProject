@@ -23,6 +23,10 @@ typedef enum {
 #define CMD_DISABLE		0xE0U
 #define CMD_ENABLE		0xE1U
 
+// Deliberately invalid byte for the demo. The clock board must ignore it: no change
+// to the rate or enable state, and no glitch (spec p.4)
+#define CMD_INVALID_TEST	0xD3U
+
 // Indicator LEDs: sets up PF1-PF5 and puts the clock board in a known state
 // (disable, fx/8, enable), because its flip-flops power up random
 void rate_init(void);
@@ -30,6 +34,10 @@ void rate_init(void);
 // Main loop only. Each one produces a command byte and updates the LEDs
 void rate_set(rate_t rate);
 void rate_enable(int on);
+
+// Sends CMD_INVALID_TEST. Changes nothing on our side (rate, enable state, LEDs),
+// because the clock board must ignore it too. Main loop only
+void rate_send_invalid(void);
 
 rate_t rate_get(void);
 int rate_is_enabled(void);
