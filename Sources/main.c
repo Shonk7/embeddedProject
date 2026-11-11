@@ -19,6 +19,10 @@
 //  10 = the full system plus Sampling and the 3-band mixer (Ext A). Same as 4, but
 //       each sample goes through Sources/Sampling and the mixer at fx/8. Any other
 //       number leaves Sampling out, so audio is plain passthrough
+//  11 = FFT capture: draws 128-point blocks at each rate (Stage 7)
+//  12 = rate sweep proof: settle time, ISR load and OVR/LATE at all four rates,
+//       plus disable / invalid / enable (Stage 8, needs the clock board)
+//  13 = ramp staircase on J1301, one stair per clock edge (Stage 8, volume low)
 #define ACTIVE_TEST		10
 // Test comment
 
@@ -56,6 +60,12 @@ int main(void) {
 	test_spi();
 #elif ACTIVE_TEST == 9
 	test_spi_loopback();
+#elif ACTIVE_TEST == 11
+	test_capture();
+#elif ACTIVE_TEST == 12
+	test_rates();
+#elif ACTIVE_TEST == 13
+	test_ramp();
 #elif ACTIVE_TEST == 10
 	// Full system with the mixer. Sampling plugs into the audio ISR, then the UI
 	// switches the mixer on whenever the rate is fx/8. Audio starts as passthrough

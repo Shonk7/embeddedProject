@@ -460,6 +460,16 @@
               <FilePath>.\sources\audio.h</FilePath>
             </File>
             <File>
+              <FileName>capture.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Sources\capture.c</FilePath>
+            </File>
+            <File>
+              <FileName>capture.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Sources\capture.h</FilePath>
+            </File>
+            <File>
               <FileName>clock_spi.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\Sources\spi\clock_spi.c</FilePath>
