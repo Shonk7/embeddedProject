@@ -569,6 +569,16 @@
               <FileType>5</FileType>
               <FilePath>.\Sources\ui\mixer.h</FilePath>
             </File>
+            <File>
+              <FileName>fft.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Sources\ui\fft.c</FilePath>
+            </File>
+            <File>
+              <FileName>fft.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Sources\ui\fft.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

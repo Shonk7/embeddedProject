@@ -6,8 +6,10 @@
 #include "../audio.h"
 #include "../extclk.h"
 #include "../Sampling/sampling.h"
+#include "../capture.h"
 #include "rate_ctrl.h"
 #include "mixer.h"
+#include "fft.h"
 #include "ui.h"
 #include "touch.h"
 
@@ -177,19 +179,6 @@ static void draw_main_page(void) {
 
 	// Backup controls (touch also works)
 	text1x(8U, 308U, "PB0: next rate  PB1: start/stop", DARK_GRAY, BLACK);
-}
-
-// ---------------------------------------------------------------------------
-// Placeholder page (spectrum, until Ext B exists)
-// ---------------------------------------------------------------------------
-static void draw_placeholder_page(const char *title, const char *line) {
-	lcd_fillScreen(BLACK);
-	draw_title(title);
-	text1x(16U, 60U, line, WHITE, BLACK);
-	text1x(16U, 76U, "Page not built yet", LIGHT_GRAY, BLACK);
-	text1x(16U, 100U, "Rate:", LIGHT_GRAY, BLACK);
-	text1x(52U, 100U, rate_label(rate_get()), WHITE, BLACK);
-	draw_button(&btn_back, "BACK", WHITE, DARK_CYAN);
 }
 
 static void show_page(page_t p);
@@ -475,6 +464,265 @@ static void stats_update(void) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Spectrum page (Ext B.1). Each frame: ask the ISR for a 128-point block
+// (Sources/capture.c, about 49.9 kHz at every rate), run the FFT, and redraw only
+// the part of each bar that changed. Bars cover 0 to 20 kHz, one per bin (390 Hz),
+// 0 dB at the top (a full-scale sine) down to -80 dB. PF9 (J1101 pin 4) toggles
+// once per frame, so a scope reads a square wave at half the frame rate
+// ---------------------------------------------------------------------------
+#define SPEC_X0				26U		// left edge of bar 0
+#define SPEC_BAR_PITCH		4U		// 3 pixels of bar, 1 of gap
+#define SPEC_BAR_W			3U
+#define SPEC_MAX_BARS		53U		// (239 - SPEC_X0) / SPEC_BAR_PITCH
+#define SPEC_TOP			64U
+#define SPEC_BOT			247U	// bottom row of every bar
+#define SPEC_H				(SPEC_BOT - SPEC_TOP + 1U)
+#define SPEC_RANGE_DB10		800		// 80 dB from top to bottom
+#define SPEC_SHOW_HZ		20000U	// the spec's 0 to 20 kHz
+
+// 50 frames a second. The spec asks for at least 30, and this leaves margin at fx,
+// where the ISR takes a big share of the CPU
+#define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 50U)
+#define SPEC_TIMEOUT_CYCLES	(SYSCLK_HZ / 10U)	// a block takes 2.6 ms: 100 ms = no clock
+#define SPEC_TEXT_CYCLES	(SYSCLK_HZ / 2U)	// numbers and labels twice a second
+
+#define SPEC_LABEL_Y		(SPEC_BOT + 4U)
+#define SPEC_INFO_Y			38U
+#define SPEC_PEAK_Y			50U
+#define SPEC_FPS_Y			262U
+
+static int32_t spec_db10[FFT_HALF];
+static uint16_t spec_drawn[SPEC_MAX_BARS];	// bar heights on screen now
+static uint32_t spec_bars;					// how many bars cover 0 to 20 kHz
+static uint32_t spec_fs_hz;					// capture rate of the last block
+static uint32_t spec_peak_hz;
+static int32_t spec_peak_db10;
+static int spec_waiting;					// 1 = a block has been asked for
+static uint32_t spec_wait_start;
+static uint32_t spec_next_frame;
+static uint32_t spec_frames;				// frames since the last text update
+static uint32_t spec_text_tick;
+static uint32_t spec_fps;
+
+// PF9 = J1101 pin 4, push-pull, 50 MHz. dbg_init() has already clocked port F
+static void frame_pin_init(void) {
+	GPIOF->BSRR = GPIO_BSRR_BR9;
+	GPIOF->CRH = (GPIOF->CRH & ~(GPIO_CRH_CNF9_Msk | GPIO_CRH_MODE9_Msk))
+	           | (3U << GPIO_CRH_MODE9_Pos);
+}
+
+// One BSRR write, so it can't undo a pin change the ISR makes on port F
+static void frame_pin_toggle(void) {
+	GPIOF->BSRR = (GPIOF->ODR & GPIO_ODR_ODR9) ? GPIO_BSRR_BR9 : GPIO_BSRR_BS9;
+}
+
+// Level (tenths of a dB) to bar height in pixels
+static uint16_t spec_height(int32_t db10) {
+	int32_t h = ((db10 + SPEC_RANGE_DB10) * (int32_t)SPEC_H) / SPEC_RANGE_DB10;
+
+	if (h < 0) {
+		h = 0;
+	} else if (h > (int32_t)SPEC_H) {
+		h = (int32_t)SPEC_H;
+	}
+	return (uint16_t)h;
+}
+
+// Grows or shrinks one bar from its old height to its new one. Only the
+// difference is drawn, which is what keeps a frame fast
+static void spec_draw_bar(uint32_t k, uint16_t h) {
+	uint16_t x = (uint16_t)(SPEC_X0 + k * SPEC_BAR_PITCH);
+	uint16_t old = spec_drawn[k];
+
+	if (h > old) {
+		lcd_fillRect(x, SPEC_BOT - h + 1U, x + SPEC_BAR_W - 1U, SPEC_BOT - old, CYAN);
+	} else if (h < old) {
+		lcd_fillRect(x, SPEC_BOT - old + 1U, x + SPEC_BAR_W - 1U, SPEC_BOT - h, BLACK);
+	}
+	spec_drawn[k] = h;
+}
+
+// Frequency labels under the bars. They move a little with the measured rate
+static void spec_draw_labels(void) {
+	static const char * const label[5] = { "0", "5k", "10k", "15k", "20k" };
+	uint32_t i;
+	uint32_t x;
+
+	lcd_fillRect(0U, SPEC_LABEL_Y, 239U, SPEC_LABEL_Y + 7U, BLACK);
+	if (spec_fs_hz == 0U) {
+		return;
+	}
+	for (i = 0U; i < 5U; i++) {
+		// Bar centre for this frequency: f x 128 / fs bins along
+		x = SPEC_X0 + 1U + (i * 5000U * FFT_N * SPEC_BAR_PITCH) / spec_fs_hz;
+		x = (x >= 6U) ? x - 6U : 0U;	// roughly centre the text
+		if (x > 220U) {
+			x = 220U;
+		}
+		text1x((uint16_t)x, SPEC_LABEL_Y, label[i], LIGHT_GRAY, BLACK);
+	}
+}
+
+// "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "50 FRAMES/S  PF9 = J1101 pin 4"
+static void spec_draw_text(void) {
+	char text[44];
+	char *p;
+	int32_t db;
+
+	lcd_fillRect(0U, SPEC_INFO_Y, 239U, SPEC_PEAK_Y + 7U, BLACK);
+	if (spec_fs_hz == 0U) {
+		text1x(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
+	} else {
+		p = put_text(text, "fs ");
+		p = put_uint(p, spec_fs_hz);
+		p = put_text(p, " Hz  BIN ");
+		p = put_uint(p, (spec_fs_hz + FFT_N / 2U) / FFT_N);
+		p = put_text(p, " Hz  x");
+		(void)put_uint(p, capture_decimation());
+		text1x(8U, SPEC_INFO_Y, text, WHITE, BLACK);
+
+		db = (spec_peak_db10 < 0) ? -spec_peak_db10 : spec_peak_db10;
+		p = put_text(text, "PEAK ");
+		p = put_uint(p, spec_peak_hz);
+		p = put_text(p, (spec_peak_db10 < 0) ? " Hz  -" : " Hz  ");
+		p = put_uint(p, (uint32_t)(db / 10));
+		(void)put_text(p, " dB");
+		text1x(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
+	}
+
+	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
+	p = put_uint(text, spec_fps);
+	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
+	text1x(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
+}
+
+static void draw_spectrum_page(void) {
+	uint32_t k;
+
+	lcd_fillScreen(BLACK);
+	draw_title("SPECTRUM");
+
+	// dB scale on the left and the baseline under the bars
+	text1x(2U, SPEC_TOP, "0", LIGHT_GRAY, BLACK);
+	text1x(2U, SPEC_TOP + SPEC_H / 2U - 4U, "-40", LIGHT_GRAY, BLACK);
+	text1x(2U, SPEC_BOT - 7U, "-80", LIGHT_GRAY, BLACK);
+	lcd_line(SPEC_X0 - 2U, SPEC_TOP, SPEC_X0 - 2U, SPEC_BOT, DARK_GRAY);
+	lcd_line(SPEC_X0 - 2U, SPEC_BOT + 1U, 239U, SPEC_BOT + 1U, DARK_GRAY);
+
+	draw_button(&btn_back, "BACK", WHITE, DARK_CYAN);
+
+	for (k = 0U; k < SPEC_MAX_BARS; k++) {
+		spec_drawn[k] = 0U;
+	}
+	spec_bars = 0U;
+	spec_fs_hz = 0U;
+	spec_waiting = 0;
+	spec_frames = 0U;
+	spec_fps = 0U;
+	spec_next_frame = dbg_cycles();
+	spec_text_tick = spec_next_frame;
+}
+
+// Turns the finished block into bars
+static void spec_frame(void) {
+	uint32_t span = capture_span_cycles();
+	uint32_t bars;
+	uint32_t k;
+	uint32_t peak = 1U;
+	int32_t a;
+	int32_t b;
+	int32_t c;
+	int32_t den;
+	int32_t shift_q8 = 0;
+
+	fft_spectrum(capture_data(), spec_db10);
+
+	// The real capture rate of this block: 127 point periods took span cycles
+	spec_fs_hz = (span != 0U) ? (uint32_t)(((uint64_t)(FFT_N - 1U) * SYSCLK_HZ) / span) : 0U;
+	if (spec_fs_hz == 0U) {
+		return;
+	}
+
+	// Bars for 0 to 20 kHz: bin k sits at k x fs / 128
+	bars = (SPEC_SHOW_HZ * FFT_N) / spec_fs_hz + 1U;
+	if (bars > SPEC_MAX_BARS) {
+		bars = SPEC_MAX_BARS;
+	}
+	if (bars > FFT_HALF) {
+		bars = FFT_HALF;
+	}
+
+	for (k = 0U; k < bars; k++) {
+		spec_draw_bar(k, spec_height(spec_db10[k]));
+	}
+	// If the rate moved and there are fewer bars now, clear the extra ones
+	for (k = bars; k < spec_bars; k++) {
+		spec_draw_bar(k, 0U);
+	}
+	spec_bars = bars;
+
+	// Loudest bin (skipping DC), then a parabola through it and its neighbours
+	// to place the peak between bins. On a host test this was within 0.5 % from
+	// 1 kHz up, but 20 % out at 200 to 500 Hz, where the tone sits within two bins
+	// of DC. So it's a readout for the spectrum only, not B.2's pitch estimate
+	for (k = 2U; k < bars - 1U; k++) {
+		if (spec_db10[k] > spec_db10[peak]) {
+			peak = k;
+		}
+	}
+	a = spec_db10[peak - 1U];
+	b = spec_db10[peak];
+	c = spec_db10[peak + 1U];
+	den = a - 2 * b + c;
+	if (den != 0) {
+		shift_q8 = (128 * (a - c)) / den;	// -128 to 128 = half a bin either way
+	}
+	spec_peak_hz = (uint32_t)((((int32_t)(peak * 256U) + shift_q8) * (int32_t)spec_fs_hz) / (int32_t)(FFT_N * 256U));
+	spec_peak_db10 = b;
+}
+
+// Called every pass of the main loop while the spectrum page is up
+static void spectrum_poll(void) {
+	uint32_t now = dbg_cycles();
+	uint32_t rate;
+
+	if (spec_waiting) {
+		if (capture_ready()) {
+			spec_waiting = 0;
+			spec_frame();
+			frame_pin_toggle();
+			spec_frames++;
+		} else if ((now - spec_wait_start) > SPEC_TIMEOUT_CYCLES) {
+			spec_waiting = 0;	// no clock: try again next frame
+			spec_fs_hz = 0U;
+		}
+	} else if ((int32_t)(now - spec_next_frame) >= 0) {
+		// Start the next frame on schedule. If a frame ran very late, start
+		// counting again from now instead of rushing to catch up
+		spec_next_frame += SPEC_FRAME_CYCLES;
+		if ((now - spec_next_frame) < 0x80000000U) {
+			spec_next_frame = now + SPEC_FRAME_CYCLES;
+		}
+
+		// The measured rate picks the decimation (stats_update, every 0.5 s).
+		// Before the first measurement, use the selected rate
+		rate = (stat_rate_hz != 0U) ? stat_rate_hz : rate_hz(rate_get());
+		capture_start(rate);
+		spec_waiting = 1;
+		spec_wait_start = now;
+	}
+
+	// Twice a second: frame rate, the numbers, and the frequency labels
+	if ((now - spec_text_tick) >= SPEC_TEXT_CYCLES) {
+		spec_fps = (uint32_t)(((uint64_t)spec_frames * SYSCLK_HZ) / (now - spec_text_tick));
+		spec_frames = 0U;
+		spec_text_tick = now;
+		spec_draw_text();
+		spec_draw_labels();
+	}
+}
+
 static void show_page(page_t p) {
 	page_t from = page;
 
@@ -484,7 +732,7 @@ static void show_page(page_t p) {
 		draw_mixer_page();
 		break;
 	case PAGE_SPECTRUM:
-		draw_placeholder_page("SPECTRUM", "Ext B: FFT spectrum");
+		draw_spectrum_page();
 		break;
 	default:
 		// Clear what the other page drew. At start-up main.c has just cleared it
@@ -621,6 +869,10 @@ void ui_init(void) {
 	stat_last_tick = dbg_cycles();
 	stat_last_edges = extclk_edges;
 
+	// Spectrum page: FFT tables (double maths, once) and the frame-rate pin
+	fft_init();
+	frame_pin_init();
+
 	touch_init();
 	buttons_init();
 	show_page(PAGE_MAIN);
@@ -635,6 +887,10 @@ void ui_poll(void) {
 	}
 
 	stats_update();
+
+	if (page == PAGE_SPECTRUM) {
+		spectrum_poll();
+	}
 
 	if (pressed != 0U) {
 		if (page != PAGE_MAIN) {
