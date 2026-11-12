@@ -3,11 +3,21 @@
 
 #include <stdint.h>
 
+// ui.h: the touchscreen user interface (all of it lives in ui/ui.c).
+//
+// Three pages:
+//   MAIN      pick the rate, start/stop the clock, send the invalid command,
+//             and open the other two pages
+//   MIXER     Ext A: three gain bars, crossover -/+ buttons, live ISR load
+//   SPECTRUM  Ext B.1: 128-point FFT bars, 0 to 20 kHz
+// main.c only ever calls ui_init() once and ui_poll() forever.
+
 // Call after lcd_init() and rate_init(). Draws the main page
 void ui_init(void);
 
-// Call every pass of the main loop. Polls the temporary push-button controls
-// and the debugger touch hook. Never call from an interrupt: drawing is slow
+// Call every pass of the main loop. Checks the touchscreen, the PB0/PB1 backup
+// buttons and the debugger touch hook, updates the live stats, and runs the
+// spectrum page's frames. Never call from an interrupt: drawing is slow
 void ui_poll(void);
 
 // The touch driver calls this once per new press, in screen pixels

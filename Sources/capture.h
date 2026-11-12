@@ -3,7 +3,15 @@
 
 #include "../Headers/stm32f103xe.h"
 
-// Stage 7: grabs blocks of input samples for the FFT (Ext B).
+// capture.h: Stage 7, which hands blocks of input samples from the audio ISR to
+// the FFT on the spectrum page (Ext B.1).
+//
+// Who uses what:
+//   audio.c (ISR)  calls capture_push() with every raw input sample, but only
+//                  while capture_armed is 1
+//   ui/ui.c        calls capture_start(), capture_ready(), capture_data() and
+//                  capture_stop() from the spectrum page (main loop)
+//   ui/fft.c       takes the 128 points from capture_data() and does the maths
 //
 // The FFT is 128 points at all four rates, and it has to show 0 to 20 kHz. At fx
 // a plain 128-point block would only give 3.1 kHz per bin, about 6 bins in the
@@ -15,9 +23,16 @@
 //   capture_start(measured_rate_hz);
 //   ... later ...
 //   if (capture_ready()) { use capture_data(); then capture_start() again }
+//   capture_stop() when the page closes
 // While a block is ready, the ISR doesn't touch the buffer, so the FFT can read it
-// at its own pace. Nothing is copied
+// at its own pace. Nothing is copied. We miss the samples that arrive between
+// blocks, but a spectrum display only needs a fresh snapshot each frame
+//
+// Example at fx (399.25 kHz): the ISR adds up 8 samples, stores the sum as one
+// point, and repeats. 128 points x 8 = 1024 samples = 2.6 ms of audio, and the
+// points come out 8 / 399250 s apart, i.e. at 49.9 kHz
 
+// Points per block: one FFT's worth (ui/fft.h FFT_N)
 #define CAPTURE_POINTS		128U
 
 // Every stored point is scaled to 8 ADC codes' worth, whatever the rate, so the
@@ -43,7 +58,8 @@ void capture_start(uint32_t rate_hz);
 // Main loop only
 void capture_stop(void);
 
-// 1 once all 128 points are in
+// 1 once all 128 points are in. Takes about 2.6 ms after capture_start() at any
+// rate. Never 1 if the clock is stopped, so callers should give up after a while
 int capture_ready(void);
 
 // The block, oldest point first. Only valid while capture_ready() is 1

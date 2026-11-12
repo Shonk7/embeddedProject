@@ -3,7 +3,19 @@
 
 #include <stdint.h>
 
-// Extension A: 3-band audio mixer. Design and test bench: mixer_design.m
+// mixer.h: Extension A, the 3-band audio mixer. Design and test bench: mixer_design.m
+//
+// In plain words: the input is split into a low band (bass, below fc1 = 500 Hz),
+// a mid band (500 Hz to 4 kHz) and a high band (treble, above fc2 = 4 kHz). Each
+// band is turned up or down by its own slider (0 to 2), and the three are added
+// back together. With every slider at 1.0 the output should sound like the input,
+// which is the spec's "tone colour must be preserved" requirement.
+//
+// Who calls what:
+//   ui/ui.c (main loop)        mixer_init, mixer_set_gain, mixer_set_crossovers,
+//                              mixer_set_active and the getters
+//   Sampling/sampling.c (ISR)  mixer_process, once per sample, at fx/8 only
+//
 //
 //   low  = LP(fc1) -> LP(fc1)
 //   mid  = HP(fc1) -> HP(fc1) -> LP(fc2) -> LP(fc2)
@@ -15,6 +27,7 @@
 // All the per-sample maths is integer (no float in the ISR). The arithmetic is the
 // same, bit for bit, as mixerFixed() in mixer_design.m
 
+// Band numbers, used as the band argument below
 #define MIXER_BANDS			3U
 #define MIXER_LOW			0U
 #define MIXER_MID			1U
@@ -50,8 +63,11 @@ void mixer_init(uint32_t fs_hz);
 // Returns 0 and changes nothing if a value is out of range
 int mixer_set_crossovers(uint32_t fc1_hz, uint32_t fc2_hz, uint32_t fs_hz);
 
+// One band's slider gain, Q14 (16384 = 1.0). Takes effect on the next sample
 void mixer_set_gain(uint32_t band, uint32_t gain_q14);
 uint32_t mixer_get_gain(uint32_t band);
+
+// The current crossovers, and the sample rate the filters were designed for
 uint32_t mixer_fc1(void);
 uint32_t mixer_fc2(void);
 uint32_t mixer_fs(void);
@@ -59,6 +75,7 @@ uint32_t mixer_fs(void);
 // On at fx/8 only. Turning it on clears the filters' memory first
 void mixer_set_active(int on);
 
+// Inline because the ISR checks it on every sample (Sampling/sampling.c)
 static inline int mixer_is_active(void) {
 	return mixer_on != 0U;
 }

@@ -1,7 +1,12 @@
+// debug.c: sets up the debug LEDs, the ISR scope pin and the CPU cycle counter.
+// The helpers that use them are inline in debug.h, so they cost almost nothing
+// when the ISR calls them.
+
 #include "debug.h"
 
 // Sets up the LEDs, the scope pin and the cycle counter
 void dbg_init(void) {
+	// Port F's clock must be on, or writes to its registers are ignored
 	RCC->APB2ENR |= RCC_APB2ENR_IOPFEN;
 
 	// Start all three pins low, so they don't glitch when they become outputs

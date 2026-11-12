@@ -1,3 +1,6 @@
+// adc.c: one-time setup of ADC1 for the audio input. The per-sample calls
+// (start, check, read) are inline in adc.h so the ISR can use them cheaply.
+
 #include "adc.h"
 
 // Delay after power-up. The ADC needs 1 us, and 150 NOPs is at least 2 us at 72 MHz
@@ -7,6 +10,7 @@
 void adc_init(void) {
 	uint32_t i;
 
+	// Clocks for port A (the pin) and ADC1, or their registers ignore our writes
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_ADC1EN;
 
 	// Make PA3 analog (CNF = 00, MODE = 00), which disconnects its digital input

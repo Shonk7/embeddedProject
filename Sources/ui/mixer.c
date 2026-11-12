@@ -1,12 +1,27 @@
 #include <math.h>
 #include "mixer.h"
 
+// mixer.c: the 3-band mixer (Ext A). See mixer.h for the filter layout.
+//
+// The file has two halves that run in different places:
+//   1. Coefficient design (top). Main loop only, uses double maths, and only runs
+//      when a crossover or the sample rate changes.
+//   2. mixer_process() (bottom). Runs in the audio ISR on every sample at fx/8.
+//      Integer maths only, because there's no floating-point hardware on this
+//      chip and a software float would be far too slow at 49.9 kHz.
+//
+// A note on "fixed point" for anyone new to it: we store a fraction as an integer
+// scaled by a power of two. For example, in Q14 the value 1.0 is stored as
+// 2^14 = 16384, and 0.5 as 8192. Multiplying two of them and shifting right by 14
+// gets back to the same scale. The formats used here are listed just below.
+
 // Fixed-point formats. These must match P in mixer_design.m
 #define COEF_BITS	30U								// coefficients are Q2.30 (range +-2)
 #define GAIN_BITS	14U								// gains are Q14 (1.0 = 16384)
 #define OUT_SHIFT	(GAIN_BITS + MIXER_STATE_BITS)	// 22: back to ADC counts
 #define ERR_MASK	((1U << COEF_BITS) - 1U)		// the 30 bits that ">> 30" drops
 
+// Output limits, in signed ADC counts (sampling.c adds 2048 back for the DAC)
 #define OUT_MIN		(-2048)
 #define OUT_MAX		2047
 
@@ -41,16 +56,19 @@ static volatile uint32_t live_bank = 0U;
 #define NUM_STAGES	8U
 static state_t stage[NUM_STAGES];
 
+// Slider gains in Q14, one per band. Main writes them, the ISR reads them
 static volatile int32_t gain[MIXER_BANDS] = {
 	(int32_t)MIXER_GAIN_ONE, (int32_t)MIXER_GAIN_ONE, (int32_t)MIXER_GAIN_ONE
 };
 
+// 1 = sampling.c should call mixer_process() (see mixer_set_active)
 volatile uint32_t mixer_on = 0U;
 
 // Set by main, cleared by the ISR after it empties the filters' memory. Main can't
 // clear the memory itself, because the ISR could run halfway through
 static volatile uint32_t reset_request = 1U;
 
+// The settings the live coefficients were designed with. Main loop only
 static uint32_t fc1_hz = MIXER_FC1_DEFAULT;
 static uint32_t fc2_hz = MIXER_FC2_DEFAULT;
 static uint32_t fs_used_hz = 0U;
@@ -90,9 +108,13 @@ static void design_pair(coef_t *lp, coef_t *hp, double fc, double fs) {
 	hp->a2 = lp->a2;
 }
 
+// Designs all four filters for new crossovers (or a new measured sample rate) and
+// swaps them in. ui.c calls it for the -/+ buttons, FLAT, and when the measured
+// rate drifts more than 1 % from fs
 int mixer_set_crossovers(uint32_t fc1, uint32_t fc2, uint32_t fs) {
-	uint32_t spare = live_bank ^ 1U;
+	uint32_t spare = live_bank ^ 1U;	// the bank the ISR is NOT reading
 
+	// Out of range, or fc2 too close to half the sample rate for a good filter
 	if ((fc1 < MIXER_FC1_MIN) || (fc1 > MIXER_FC1_MAX) ||
 	    (fc2 < MIXER_FC2_MIN) || (fc2 > MIXER_FC2_MAX) ||
 	    (fs < 4U * fc2)) {
@@ -110,6 +132,8 @@ int mixer_set_crossovers(uint32_t fc1, uint32_t fc2, uint32_t fs) {
 	return 1;
 }
 
+// Start-up settings: 500 Hz / 4 kHz crossovers, every gain 1.0, mixer off.
+// ui_init() calls this with the nominal fx/8 rate
 void mixer_init(uint32_t fs_hz) {
 	uint32_t b;
 
@@ -121,6 +145,7 @@ void mixer_init(uint32_t fs_hz) {
 	reset_request = 1U;
 }
 
+// Sets one band's gain, clamped to 2.0. Bad band numbers are ignored
 void mixer_set_gain(uint32_t band, uint32_t gain_q14) {
 	if (band >= MIXER_BANDS) {
 		return;
@@ -131,6 +156,7 @@ void mixer_set_gain(uint32_t band, uint32_t gain_q14) {
 	gain[band] = (int32_t)gain_q14;		// one aligned 32-bit write: the ISR sees old or new
 }
 
+// Simple getters for the UI
 uint32_t mixer_get_gain(uint32_t band) {
 	return (band < MIXER_BANDS) ? (uint32_t)gain[band] : 0U;
 }
@@ -147,6 +173,9 @@ uint32_t mixer_fs(void) {
 	return fs_used_hz;
 }
 
+// Switches the mixer in or out of the audio path. ui.c turns it off before any
+// rate faster than fx/8 starts (it wouldn't fit in the cycle budget there) and on
+// once fx/8 is running
 void mixer_set_active(int on) {
 	if (on && (mixer_on == 0U)) {
 		reset_request = 1U;		// start from silence, not from old memory
@@ -179,12 +208,14 @@ static inline int32_t biquad(const coef_t *c, state_t *s, int32_t x) {
 	return y;
 }
 
+// The whole mixer for one sample: 8 biquads, 3 gains, one sum. ISR only
 int32_t mixer_process(int32_t x) {
 	const coef_t *c;
 	int32_t low, mid, high, y;
 	int64_t sum;
 	uint32_t i;
 
+	// Main asked for a clean start (mixer just switched on): forget old samples
 	if (reset_request != 0U) {
 		for (i = 0U; i < NUM_STAGES; i++) {
 			stage[i].x1 = 0;
@@ -196,6 +227,7 @@ int32_t mixer_process(int32_t x) {
 		reset_request = 0U;
 	}
 
+	// Read live_bank once, so all 8 biquads in this sample use the same set
 	c = bank[live_bank];
 
 	// Split into three bands (each chain starts from the same input)

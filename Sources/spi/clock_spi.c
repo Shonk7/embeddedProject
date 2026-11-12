@@ -3,6 +3,14 @@
 #include "../debug.h"
 #include "clock_spi.h"
 
+// clock_spi.c: sends one command byte to the clock board as a full transaction
+// (shift, latch, apply). See clock_spi.h for the wiring and the timing rules.
+//
+// SPI1 is shared with the touch controller and the EEPROM, which all hang off the
+// same SCLK/MOSI/MISO wires. Each user puts its own speed and mode into SPI1 while
+// it talks, then puts back what was there. Everyone uses SPI1 from the main loop
+// only, so two users can never be halfway through at the same time.
+
 // SPI1 as master, mode 0, 8 bits, MSB first, software NSS, 72 MHz / 256 =
 // 281 kHz. Slow on purpose: breadboard wiring is forgiving at that speed
 #define CLOCK_SPI_CR1	(SPI_CR1_MSTR | SPI_CR1_BR_2 | SPI_CR1_BR_1 | SPI_CR1_BR_0 | SPI_CR1_SSM | SPI_CR1_SSI)
@@ -21,6 +29,8 @@
 #define GUARD_SHORT_US	5U
 #define GUARD_LONG_US	50U
 
+// 1 once clock_spi_init() has run. clock_spi_send() sets things up itself the
+// first time, so callers don't have to remember to
 static int initialised = 0;
 
 // Busy-wait using the CPU cycle counter (72 cycles per us)
@@ -32,13 +42,20 @@ static void delay_us(uint32_t us) {
 	}
 }
 
-// Puts 4-bit pin settings into a GPIO control register, leaving other pins alone
+// Puts 4-bit pin settings into a GPIO control register, leaving other pins alone.
+// Each pin gets 4 bits, CNF (2 bits) then MODE (2 bits). The values used here:
+//   0x2 = general-purpose push-pull output, 2 MHz (our strobes and chip selects)
+//   0xB = alternate-function push-pull, 50 MHz (SPI1 drives the pin, not us)
+//   0x4 = floating input (MISO)
 static uint32_t set_pin_mode(uint32_t reg, uint32_t pin, uint32_t mode) {
 	return (reg & ~(0xFU << (pin * 4U))) | (mode << (pin * 4U));
 }
 
+// One-time pin and SPI setup (see clock_spi.h). Called by clock_spi_send() the
+// first time if nobody called it earlier
 void clock_spi_init(void) {
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPFEN | RCC_APB2ENR_SPI1EN;
+	// Clocks for ports A (SPI pins), C (latch, chip selects), F (APPLY) and SPI1
+	RCC->APB2ENR |=RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPFEN | RCC_APB2ENR_SPI1EN;
 
 	// delay_us() needs the cycle counter. dbg_init() normally starts it, but
 	// make sure here so this module also works on its own
@@ -68,6 +85,8 @@ void clock_spi_init(void) {
 	initialised = 1;
 }
 
+// Sends one byte as a complete 5-step transaction, about 190 us, then returns.
+// The numbered comments below match the steps listed in clock_spi.h
 uint8_t clock_spi_send(uint8_t cmd) {
 	uint32_t saved_cr1;
 	uint8_t echo;

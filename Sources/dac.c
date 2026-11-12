@@ -1,7 +1,11 @@
+// dac.c: one-time setup of the DAC for the audio output. dac_write() itself is
+// inline in dac.h, because the ISR calls it on every edge.
+
 #include "dac.h"
 
 // Sets up DAC channel 1 on PA4
 void dac_init(void) {
+	// Clocks for the DAC (on APB1) and port A (the pin)
 	RCC->APB1ENR |= RCC_APB1ENR_DACEN;
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
 

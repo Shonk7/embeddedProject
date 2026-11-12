@@ -3,7 +3,16 @@
 
 #include <stdint.h>
 
-// Ext B.1: 128-point FFT of one capture block (Sources/capture.h).
+// fft.h: Ext B.1, the 128-point FFT of one capture block (Sources/capture.h).
+//
+// In plain words: an FFT takes a short snapshot of the signal (128 samples, about
+// 2.6 ms) and works out how much of each frequency is in it. Each output "bin" is
+// one slice of the frequency range. The spectrum page in ui/ui.c draws one bar per
+// bin, so a pure 1 kHz tone shows up as one tall bar about 2.6 bins from the left.
+//
+// Who calls what (main loop only):
+//   ui/ui.c  fft_init() once, the first time the spectrum page opens
+//   ui/ui.c  fft_spectrum() once per frame, on the block from capture_data()
 //
 // Each frame: remove the block's average, apply a Hann window, run a 128-point
 // radix-2 FFT, then turn each bin into a level in dB. Main loop only. The ISR
@@ -24,7 +33,7 @@
 #define FFT_FLOOR_DB10	(-1000)
 
 // Builds the twiddle, window and bit-reverse tables. Uses double maths, so call
-// once at start-up, not per frame
+// it once (ui.c does this when the spectrum page first opens), not per frame
 void fft_init(void);
 
 // in = 128 capture points (0 to 32760, silence 16384). Writes the level of bins

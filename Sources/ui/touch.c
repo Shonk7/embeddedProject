@@ -4,6 +4,15 @@
 #include "../debug.h"
 #include "touch.h"
 
+// touch.c: reads the resistive touch controller over SPI1 (see touch.h).
+//
+// A press goes through three stages:
+//   touch_poll()      every 10 ms: is the pen down, and has it been down long
+//                     enough to be a real press rather than a bounce?
+//   touch_read_raw()  8 X and 8 Y readings, rejected if they disagree too much
+//   touch_map()       raw 0-4095 numbers -> screen pixels, using touch.h's
+//                     calibration
+
 // Control byte: start bit, channel, 12-bit, differential, PD = 00 (pen IRQ on
 // between conversions). X+ driven = 0xD0, Y+ driven = 0x90
 #define CMD_READ_X		0xD0U
@@ -22,6 +31,7 @@
 // (controller limit is about 2 MHz)
 #define TOUCH_SPI_CR1	(SPI_CR1_MSTR | SPI_CR1_BR_2 | SPI_CR1_BR_0 | SPI_CR1_SSM | SPI_CR1_SSI)
 
+// Last good raw reading (see touch.h), for calibrating in the Keil Watch window
 volatile uint16_t touch_raw_x = 0U;
 volatile uint16_t touch_raw_y = 0U;
 
@@ -30,8 +40,10 @@ volatile uint16_t touch_raw_y = 0U;
 // uses it from the main loop only. The touch driver puts its own settings in,
 // and puts back whatever was there before when it finishes
 // ---------------------------------------------------------------------------
+// Whatever SPI1 settings were there before spi_take(), put back by spi_release()
 static uint32_t spi_saved_cr1;
 
+// Switch SPI1 to the touch controller's speed and mode
 static void spi_take(void) {
 	spi_saved_cr1 = SPI1->CR1;
 	if ((spi_saved_cr1 & ~SPI_CR1_SPE) != TOUCH_SPI_CR1) {
@@ -41,6 +53,7 @@ static void spi_take(void) {
 	SPI1->CR1 = TOUCH_SPI_CR1 | SPI_CR1_SPE;
 }
 
+// Wait for the last bit to finish, then give SPI1 back as we found it
 static void spi_release(void) {
 	while (SPI1->SR & SPI_SR_BSY) {
 	}
@@ -51,6 +64,8 @@ static void spi_release(void) {
 	}
 }
 
+// Sends one byte and returns the byte that came back at the same time. SPI
+// always swaps a byte for a byte, so reading means sending dummy zeros
 static uint8_t spi_xfer(uint8_t out) {
 	while ((SPI1->SR & SPI_SR_TXE) == 0U) {
 	}
@@ -60,6 +75,7 @@ static uint8_t spi_xfer(uint8_t out) {
 	return (uint8_t)SPI1->DR;
 }
 
+// Chip select is active low: low = "I'm talking to you, touch controller"
 static void cs_low(void) {
 	TOUCH_CS_PORT->BSRR = 1U << (TOUCH_CS_PIN + 16U);
 }
@@ -79,7 +95,9 @@ static uint16_t read_channel(uint8_t cmd) {
 	return (uint16_t)((((hi << 8) | lo) >> 3) & 0x0FFFU);
 }
 
-// Average of the samples with the highest and lowest dropped
+// Average of the samples with the highest and lowest dropped. Returns 0 (reject)
+// if the readings spread too far, or sit at the very ends of the range, which is
+// what a half-press or a sliding finger looks like
 static int filter(const uint16_t *s, uint16_t *out) {
 	uint32_t i, sum = 0U;
 	uint16_t lo = 0xFFFFU, hi = 0U;
@@ -97,8 +115,10 @@ static int filter(const uint16_t *s, uint16_t *out) {
 }
 
 // ---------------------------------------------------------------------------
+// Pin setup. Called once from ui_init()
 void touch_init(void) {
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN | TOUCH_CS_PORT_EN
+	// Clocks for port A (SPI pins, pen-down), port C (chip selects) and SPI1
+	RCC->APB2ENR |=RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN | TOUCH_CS_PORT_EN
 	              | RCC_APB2ENR_SPI1EN;
 
 	// Chip selects high (idle) before they become outputs. PC0 is the EEPROM:
@@ -131,10 +151,13 @@ void touch_init(void) {
 	spi_release();
 }
 
+// The controller pulls PA0 low while the screen is pressed
 int touch_is_down(void) {
 	return (GPIOA->IDR & 0x1U) == 0U;
 }
 
+// Takes 8 X/Y pairs in one go, filters each axis, and only accepts the result if
+// the pen is still down at the end (a lift mid-reading gives garbage)
 int touch_read_raw(uint16_t *raw_x, uint16_t *raw_y) {
 	uint16_t sx[SAMPLES], sy[SAMPLES];
 	uint32_t i;
@@ -167,6 +190,8 @@ static uint16_t map_axis(int32_t raw, int32_t a, int32_t b, int32_t size) {
 	return (uint16_t)p;
 }
 
+// Raw reading to screen pixels, swapping the axes first if the panel is wired
+// that way round
 void touch_map(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y) {
 #if TOUCH_SWAP_XY
 	uint16_t t = raw_x;
@@ -181,11 +206,13 @@ void touch_map(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y) {
 // Press detection: pen must be down for 20 ms, then one good reading gives one
 // press event. The pen must then be up for 30 ms before the next press counts
 // ---------------------------------------------------------------------------
-static uint32_t last_poll;
-static uint32_t down_count;
-static uint32_t up_count;
-static int pressed;
+static uint32_t last_poll;		// cycle count of the last 10 ms check
+static uint32_t down_count;		// checks in a row with the pen down
+static uint32_t up_count;		// checks in a row with the pen up
+static int pressed;				// 1 = this press has already been reported
 
+// Called every pass of the main loop, but only does anything every 10 ms. Never
+// waits, so the UI stays responsive
 int touch_poll(uint16_t *x, uint16_t *y) {
 	uint16_t rx, ry;
 
@@ -194,6 +221,7 @@ int touch_poll(uint16_t *x, uint16_t *y) {
 	}
 	last_poll = dbg_cycles();
 
+	// Waiting for a new press: report it once the pen has been down 20 ms
 	if (!pressed) {
 		if (!touch_is_down()) {
 			down_count = 0U;
@@ -211,6 +239,8 @@ int touch_poll(uint16_t *x, uint16_t *y) {
 		return 1;
 	}
 
+	// Already reported: wait for the pen to stay up 30 ms before arming again,
+	// so holding a finger on a button counts as one tap, not many
 	if (touch_is_down()) {
 		up_count = 0U;
 	} else if (++up_count >= UP_POLLS) {

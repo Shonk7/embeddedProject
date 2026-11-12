@@ -1,5 +1,9 @@
+// extclk.c: turns the clock board's signal on PF11 into one interrupt per rising
+// edge. The interrupt handler itself lives in audio.c, because it's the audio path.
+
 #include "extclk.h"
 
+// Bumped by the ISR on every edge (see extclk.h)
 volatile uint32_t extclk_edges = 0U;
 
 // Makes every rising edge on PF11 (J1101 pin 6) fire EXTI15_10_IRQHandler,

@@ -2,6 +2,10 @@
 #include "rate_ctrl.h"
 #include "../spi/clock_spi.h"
 
+// rate_ctrl.c: turns "the user picked a rate" into a command byte for the clock
+// board, and keeps the LEDs showing what we asked for. Main loop only, because
+// every call sends over SPI (about 190 us each).
+
 // Indicator LEDs on port F, active high (LED1-LED5 on the board).
 // PF5, PF7 and PF8 belong to debug.c, so they are left alone here
 #define LED_RATE_FIRST	0U								// PF0 fx, PF1 fx/2, PF2 fx/4, PF3 fx/8
@@ -9,21 +13,26 @@
 #define LED_ENABLE_BIT	(1U << 4)						// PF4 on = clock enabled
 #define LED_ALL_MASK	(LED_RATE_MASK | LED_ENABLE_BIT)
 
+// Command byte for each rate, indexed by rate_t
 static const uint8_t rate_cmd[RATE_COUNT] = {
 	CMD_RATE_FX, CMD_RATE_FX_2, CMD_RATE_FX_4, CMD_RATE_FX_8
 };
 
+// Labels for the status box on the main page
 static const char * const rate_text[RATE_COUNT] = {
 	"399.25 kHz", "199.63 kHz", "99.81 kHz", "49.91 kHz"
 };
 
+// Shorter labels that fit inside the rate buttons
 static const char * const rate_text_short[RATE_COUNT] = {
 	"399 kHz", "200 kHz", "100 kHz", "50 kHz"
 };
 
+// What we last asked the clock board for. rate_init() overwrites both at start-up
 static rate_t current_rate = RATE_FX_8;
 static int clock_enabled = 0;
 
+// Last byte sent, shown as "LAST CMD 0x.." on the main page
 volatile uint8_t clock_last_cmd = 0U;
 
 // One BSRR write: the selected rate's LED on, the other three off, and the
@@ -40,9 +49,11 @@ static void leds_update(void) {
 	GPIOF->BSRR = on | (off << 16);
 }
 
+// LEDs on, then a known start state on the clock board. main.c calls this once
 void rate_init(void) {
 	uint32_t pin;
 
+	// Port F clock on, or the LED pin setup is ignored
 	RCC->APB2ENR |= RCC_APB2ENR_IOPFEN;
 
 	// Levels first so the pins don't flash when they become outputs
@@ -59,6 +70,8 @@ void rate_init(void) {
 	rate_enable(1);
 }
 
+// Sends D1/D2/D4/D8 and remembers the choice. A bad index is ignored, so a bug
+// elsewhere can never send a random byte
 void rate_set(rate_t rate) {
 	if ((uint32_t)rate >= (uint32_t)RATE_COUNT) {
 		return;
@@ -69,6 +82,8 @@ void rate_set(rate_t rate) {
 	leds_update();
 }
 
+// Sends E1 (on != 0) or E0 (on == 0). The board keeps its rate across a
+// disable, so current_rate is left alone
 void rate_enable(int on) {
 	clock_last_cmd = on ? CMD_ENABLE : CMD_DISABLE;
 	clock_spi_send(on ? CMD_ENABLE : CMD_DISABLE);
@@ -76,11 +91,15 @@ void rate_enable(int on) {
 	leds_update();
 }
 
+// Demo of the invalid-command rule: sends 0xD3 but deliberately leaves our own
+// state and LEDs alone. If the measured rate on screen doesn't move either, the
+// clock board passed
 void rate_send_invalid(void) {
 	clock_last_cmd = CMD_INVALID_TEST;
 	clock_spi_send(CMD_INVALID_TEST);
 }
 
+// Simple getters for the UI
 rate_t rate_get(void) {
 	return current_rate;
 }
@@ -89,6 +108,8 @@ int rate_is_enabled(void) {
 	return clock_enabled;
 }
 
+// fx / 2^rate, so 399250 >> 3 = 49906 Hz for fx/8. This is the nominal rate,
+// not a measurement
 uint32_t rate_hz(rate_t rate) {
 	return FX_HZ >> (uint32_t)rate;
 }

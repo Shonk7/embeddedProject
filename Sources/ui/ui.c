@@ -14,11 +14,37 @@
 #include "ui.h"
 #include "touch.h"
 
+// ===========================================================================
+// ui.c: the whole touchscreen interface (secondary objective + Ext A/B pages)
+// ===========================================================================
+//
+// How to find your way around this file, top to bottom:
+//   Layout          where every button sits on the 240 x 320 screen
+//   Drawing helpers text at 1x / 2x size, buttons, title bar, hit testing
+//   Main page       rate buttons, clock on/off, invalid-command test button
+//   Mixer page      Ext A: gain bars, crossover -/+ buttons, live ISR load
+//   Spectrum page   Ext B.1: FFT bars, frame-rate pin on PF9
+//   Actions         what each tap does (select_rate, toggle_enable, ...)
+//   Push buttons    PB0/PB1 backup controls
+//   ui_init/ui_poll the two functions main.c calls
+//
+// The one rule for everything here: it all runs in the main loop, never in the
+// interrupt. Drawing on this LCD is slow (a full-screen clear is 76,800 pixels),
+// but that's fine, because the audio ISR cuts in on every clock edge regardless.
+// The spec's "audio must not drop out while the screen is redrawn" comes for free
+// from that split. The only cost is that a slow redraw makes the UI feel slow, so
+// the spectrum page redraws only what changed.
+//
+// Nothing in ui_poll() blocks for long: touch, buttons and stats each check the
+// cycle counter and return straight away if it isn't their turn yet.
+
 // ---------------------------------------------------------------------------
-// Layout (portrait 240 x 320). Every touch area is a rectangle
+// Layout (portrait 240 x 320, x left to right, y top to bottom). Every touch
+// area is a rectangle, and the same rectangle is used to draw the button and to
+// test whether a tap hit it, so the two can never disagree
 // ---------------------------------------------------------------------------
 typedef struct {
-	uint16_t x0, y0, x1, y1;
+	uint16_t x0, y0, x1, y1;	// top-left and bottom-right corners, inclusive
 } box_t;
 
 static const box_t btn_rate[RATE_COUNT] = {
@@ -29,29 +55,36 @@ static const box_t btn_rate[RATE_COUNT] = {
 };
 static const box_t btn_enable   = {   8, 224, 115, 263 };	// left half
 static const box_t btn_invalid  = { 124, 224, 231, 263 };	// right half: sends 0xD3
-static const box_t btn_mixer    = {   8, 272, 115, 303 };
-static const box_t btn_spectrum = { 124, 272, 231, 303 };
-static const box_t btn_back     = {   8, 272, 231, 303 };
+static const box_t btn_mixer    = {   8, 272, 115, 303 };	// opens the mixer page
+static const box_t btn_spectrum = { 124, 272, 231, 303 };	// opens the spectrum page
+static const box_t btn_back     = {   8, 272, 231, 303 };	// spectrum page: full width
 
+// The status box on the main page (rate, clock state, last command byte)
 #define STATUS_X0	8U
 #define STATUS_Y0	40U
 #define STATUS_X1	231U
 #define STATUS_Y1	95U
 
+// The three pages. Taps, buttons and the spectrum frames all check this to
+// decide what to do
 typedef enum {
 	PAGE_MAIN = 0,
 	PAGE_MIXER,
 	PAGE_SPECTRUM
 } page_t;
 
+// The page on screen now. Only show_page() changes it
 static page_t page = PAGE_MAIN;
 
+// Fake-touch hook for the Keil debugger (see ui.h). 0xFFFF = no fake touch waiting
 volatile uint16_t ui_test_x = 0xFFFFU;
 volatile uint16_t ui_test_y = 0U;
 
 // ---------------------------------------------------------------------------
 // Drawing helpers
 // ---------------------------------------------------------------------------
+
+// Length of a string (we don't pull in the C library's strlen)
 static uint16_t text_len(const char *s) {
 	uint16_t n = 0U;
 	while (s[n] != '\0') {
@@ -67,10 +100,12 @@ static void text2x(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_co
 	unsigned char ch, bits;
 
 	while (*s != '\0') {
+		// The font only has printable ASCII; anything else draws as a space
 		ch = (unsigned char)*s++;
 		if ((ch < 0x20U) || (ch > 0x7FU)) {
 			ch = 0x20U;
 		}
+		// Each font row is one byte, leftmost pixel in the top bit
 		for (row = 0U; row < 8U; row++) {
 			bits = font5x7[ch - 0x20U][row];
 			for (col = 0U; col < 6U; col++) {
@@ -83,6 +118,8 @@ static void text2x(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_co
 	}
 }
 
+// Normal-size text through the LCD library. Fine for anything drawn once; use
+// text_fast() for text redrawn while the spectrum is running
 static void text1x(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd_color_t bg) {
 	lcd_fontColor(fg, bg);
 	lcd_putString(x, y, (unsigned char *)s);
@@ -106,6 +143,8 @@ static void text_fast(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd
 			ch = 0x20U;
 		}
 
+		// Address window = this character's 6 x 8 cell: columns x to x+5, rows
+		// y to y+7. Each coordinate goes as two bytes, high then low
 		ili9341_WriteReg(LCD_COLUMN_ADDR);
 		ili9341_WriteData(x >> 8);
 		ili9341_WriteData(x & 0xFFU);
@@ -118,6 +157,7 @@ static void text_fast(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd
 		ili9341_WriteData((y + 7U) & 0xFFU);
 		ili9341_WriteReg(LCD_GRAM);
 
+		// Then just stream the 48 pixel colours; the panel fills the window itself
 		for (row = 0U; row < 8U; row++) {
 			bits = font5x7[ch - 0x20U][row];
 			for (col = 0U; col < 6U; col++) {
@@ -128,6 +168,7 @@ static void text_fast(uint16_t x, uint16_t y, const char *s, lcd_color_t fg, lcd
 	}
 }
 
+// Filled rectangle with a grey border and the label centred in 2x text
 static void draw_button(const box_t *b, const char *label, lcd_color_t fg, lcd_color_t bg) {
 	uint16_t w = b->x1 - b->x0 + 1U;
 	uint16_t h = b->y1 - b->y0 + 1U;
@@ -138,6 +179,7 @@ static void draw_button(const box_t *b, const char *label, lcd_color_t fg, lcd_c
 	text2x(b->x0 + (w - tw) / 2U, b->y0 + (h - 16U) / 2U, label, fg, bg);
 }
 
+// Navy title bar across the top of every page
 static void draw_title(const char *title) {
 	uint16_t tw = text_len(title) * 12U;
 
@@ -145,13 +187,18 @@ static void draw_title(const char *title) {
 	text2x((240U - tw) / 2U, 8U, title, WHITE, NAVY);
 }
 
+// 1 if the tap at (x, y) landed inside box b
 static int hit(const box_t *b, uint16_t x, uint16_t y) {
 	return (x >= b->x0) && (x <= b->x1) && (y >= b->y0) && (y <= b->y1);
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Main page: covers the core UI requirements (select the rate and show it,
+// enable/disable the clock, page switching) plus the invalid-command demo
 // ---------------------------------------------------------------------------
+
+// The status box: selected rate, running/stopped, and the last byte sent.
+// Called again after every action, so it always matches what we last sent
 static void draw_status(void) {
 	char cmd_text[] = "LAST CMD 0x00";
 
@@ -202,6 +249,9 @@ static void draw_invalid_button(void) {
 	draw_button(&btn_invalid, "D3 BAD", WHITE, MAROON);
 }
 
+// Draws the whole main page. There's no full-screen clear here: show_page()
+// clears the screen when coming back from another page, and main.c clears it at
+// start-up, so clearing again would only add a visible flicker
 static void draw_main_page(void) {
 	//lcd_fillScreen(BLACK);
 	draw_title("AUDIO SAMPLER");
@@ -222,6 +272,7 @@ static void draw_main_page(void) {
 	text1x(8U, 308U, "PB0: next rate  PB1: start/stop", DARK_GRAY, BLACK);
 }
 
+// Declared early because the mixer page's BACK button needs it
 static void show_page(page_t p);
 
 // ---------------------------------------------------------------------------
@@ -251,6 +302,7 @@ static void show_page(page_t p);
 // Interrupt entry and exit, which the ISR's own cycle count can't see (Stage 5)
 #define ISR_ENTRY_EXIT_CYCLES	30U
 
+// Mixer page buttons: crossover -/+ (two rows), BACK and FLAT
 static const box_t btn_fc1_down = {   8, 198,  55, 221 };
 static const box_t btn_fc1_up   = { 184, 198, 231, 221 };
 static const box_t btn_fc2_down = {   8, 226,  55, 249 };
@@ -258,8 +310,10 @@ static const box_t btn_fc2_up   = { 184, 226, 231, 249 };
 static const box_t btn_mix_back = {   8, 272, 115, 303 };
 static const box_t btn_mix_flat = { 124, 272, 231, 303 };
 
+// Bar colour per band: low, mid, high
 static const lcd_color_t band_colour[MIXER_BANDS] = { MAGENTA, GREEN, CYAN };
 
+// The slider positions in hundredths. The mixer itself gets them as Q14
 static uint32_t gain_h[MIXER_BANDS] = { 100U, 100U, 100U };
 
 // Measured every half second by stats_update()
@@ -284,6 +338,7 @@ static char *put_uint(char *p, uint32_t v) {
 	return p;
 }
 
+// Copies s to p and returns the new end, so calls chain like put_uint()
 static char *put_text(char *p, const char *s) {
 	while (*s != '\0') {
 		*p++ = *s++;
@@ -324,8 +379,10 @@ static void band_label(char *p, uint32_t band) {
 	(void)put_text(p, " Hz");
 }
 
+// One band's row: label with its frequency range, the value in big text, and the
+// bar. Redrawn whenever that band's gain or the crossovers change
 static void draw_gain_row(uint32_t band) {
-	uint16_t y0 = (uint16_t)(MIX_ROW_Y0 + band * MIX_ROW_PITCH);
+	uint16_t y0 =(uint16_t)(MIX_ROW_Y0 + band * MIX_ROW_PITCH);
 	uint16_t top = y0 + MIX_BAR_TOP;
 	uint16_t bot = y0 + MIX_BAR_BOT;
 	uint16_t fill = (uint16_t)((gain_h[band] * MIX_BAR_W) / GAIN_MAX_H);
@@ -350,6 +407,8 @@ static void draw_gain_row(uint32_t band) {
 	lcd_line(one_x, top, one_x, bot, WHITE);
 }
 
+// One line under the title saying whether the mixer is really in the audio path:
+// not installed, bypassed (rate isn't fx/8), or active with its design rate
 static void draw_mixer_status(void) {
 	char text[41];
 	char *p;
@@ -367,8 +426,7 @@ static void draw_mixer_status(void) {
 	}
 }
 
-// Fixed crossovers, shown for reference: "500 Hz / 4000 Hz"
-// One crossover value, centred between its - and + buttons
+// One crossover value, e.g. "500 Hz", centred between its - and + buttons
 static void draw_fc_value(uint16_t y, uint32_t hz) {
 	char text[12];
 	uint16_t tw;
@@ -391,6 +449,10 @@ static void draw_crossovers(void) {
 }
 
 // "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  CLIP 0"
+// (example layout only, not a measurement). This is the Ext A "how close to the
+// processor's limit" number: the longest ISR in the last half second against the
+// cycles available per sample. LATE should stay at 0, and CLIP rising means the
+// input is too loud
 static void draw_mixer_stats(void) {
 	char text[48];
 	char *p;
@@ -423,6 +485,7 @@ static void draw_mixer_stats(void) {
 	text1x(8U, MIX_STATS_Y + 10U, text, WHITE, BLACK);
 }
 
+// Draws the whole mixer page from scratch
 static void draw_mixer_page(void) {
 	uint32_t b;
 
@@ -460,14 +523,17 @@ static void set_gain_from_x(uint32_t band, uint16_t x) {
 	if (pos > MIX_BAR_W) {
 		pos = MIX_BAR_W;
 	}
+	// Pixels along the bar -> 0 to 200 hundredths, then round to the nearest 5
 	h = (pos * GAIN_MAX_H + MIX_BAR_W / 2U) / MIX_BAR_W;
 	h = ((h + GAIN_STEP_H / 2U) / GAIN_STEP_H) * GAIN_STEP_H;
 
+	// Remember it, send it to the mixer (live on the next sample), redraw the row
 	gain_h[band] = h;
 	mixer_set_gain(band, gain_q14(h));
 	draw_gain_row(band);
 }
 
+// What a tap does on the mixer page
 static void mixer_touch(uint16_t x, uint16_t y) {
 	uint32_t b;
 	uint16_t y0;
@@ -476,6 +542,7 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 		show_page(PAGE_MAIN);
 		return;
 	}
+	// FLAT: every gain back to 1.00 and the crossovers back to 500 Hz / 4 kHz
 	if (hit(&btn_mix_flat, x, y)) {
 		for (b = 0U; b < MIXER_BANDS; b++) {
 			gain_h[b] = 100U;
@@ -524,14 +591,19 @@ static void stats_update(void) {
 	if (elapsed < STATS_PERIOD_CYCLES) {
 		return;
 	}
+	// Measured rate = clock edges in this window / the window's length. The
+	// "+ elapsed / 2" rounds to the nearest Hz instead of always down
 	edges = extclk_edges;
-	stat_rate_hz = (uint32_t)((((uint64_t)(edges - stat_last_edges) * SYSCLK_HZ) + elapsed / 2U) / elapsed);
+	stat_rate_hz =(uint32_t)((((uint64_t)(edges - stat_last_edges) * SYSCLK_HZ) + elapsed / 2U) / elapsed);
 	stat_last_edges = edges;
 	stat_last_tick = now;
 
+	// Take the longest ISR from this window and start a fresh window
 	stat_isr_cycles = audio_max_cycles;
 	audio_max_cycles = 0U;
 
+	// Redesign only if the mixer is on, the rate looks like fx/8 (within +-50 %,
+	// so a stopped or wrong clock is ignored) and it's drifted more than 1 %
 	fs_design = mixer_fs();
 	if (mixer_is_active() &&
 	    (stat_rate_hz > fs_nominal / 2U) && (stat_rate_hz < fs_nominal + fs_nominal / 2U) &&
@@ -564,10 +636,10 @@ static void stats_update(void) {
 #define SPEC_RANGE_DB10		800		// 80 dB from top to bottom
 #define SPEC_SHOW_HZ		20000U	// the spec's 0 to 20 kHz
 
-// 40 frames a second (25 ms per frame). The spec asks for at least 30. 40 leaves
-// more slack per frame than 50 did, so the occasional slow pass (text redraw,
-// stats, many bars changing) no longer pushes a frame into the next slot, and
-// still stays well above 30 at fx, where the ISR takes a big share of the CPU
+// Frame period: SYSCLK_HZ / 50 = 20 ms, so 50 frames a second when every frame
+// fits in its slot. The spec asks for at least 30, checked on a scope with PF9.
+// If frames start running late (most likely at fx, where the ISR takes a big
+// share of the CPU), changing 50 to 40 gives each frame 25 ms and still clears 30
 #define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 50U)
 #define SPEC_TIMEOUT_CYCLES	(SYSCLK_HZ / 10U)	// a block takes 2.6 ms: 100 ms = no clock
 #define SPEC_TEXT_CYCLES	(SYSCLK_HZ / 2U)	// numbers and labels twice a second
@@ -579,18 +651,19 @@ static void stats_update(void) {
 #define SPEC_YTITLE_Y		50U		// "LEVEL (dB)" above the dB scale
 #define SPEC_XTITLE_Y		262U	// "FREQUENCY (Hz)" under the frequency labels
 
-static int32_t spec_db10[FFT_HALF];
+// Spectrum page state. Only the main loop touches any of this
+static int32_t spec_db10[FFT_HALF];			// the FFT's output for the last frame
 static uint16_t spec_drawn[SPEC_MAX_BARS];	// bar heights on screen now
 static uint32_t spec_bars;					// how many bars cover 0 to 20 kHz
 static uint32_t spec_fs_hz;					// capture rate of the last block
-static uint32_t spec_peak_hz;
-static int32_t spec_peak_db10;
+static uint32_t spec_peak_hz;				// loudest frequency in the last frame
+static int32_t spec_peak_db10;				// and its level
 static int spec_waiting;					// 1 = a block has been asked for
-static uint32_t spec_wait_start;
-static uint32_t spec_next_frame;
+static uint32_t spec_wait_start;			// when we asked (for the no-clock timeout)
+static uint32_t spec_next_frame;			// cycle count when the next frame is due
 static uint32_t spec_frames;				// frames since the last text update
-static uint32_t spec_text_tick;
-static uint32_t spec_fps;
+static uint32_t spec_text_tick;				// when the text was last updated
+static uint32_t spec_fps;					// measured frames per second
 
 // PF9 = J1101 pin 4, push-pull, 50 MHz. dbg_init() has already clocked port F
 static void frame_pin_init(void) {
@@ -604,7 +677,8 @@ static void frame_pin_toggle(void) {
 	GPIOF->BSRR = (GPIOF->ODR & GPIO_ODR_ODR9) ? GPIO_BSRR_BR9 : GPIO_BSRR_BS9;
 }
 
-// Level (tenths of a dB) to bar height in pixels
+// Level (tenths of a dB) to bar height in pixels: 0 dB = full height, -80 dB
+// or quieter = no bar
 static uint16_t spec_height(int32_t db10) {
 	int32_t h = ((db10 + SPEC_RANGE_DB10) * (int32_t)SPEC_H) / SPEC_RANGE_DB10;
 
@@ -651,7 +725,10 @@ static void spec_draw_labels(void) {
 	}
 }
 
-// "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "40 FRAMES/S  PF9 = J1101 pin 4"
+// Text readout: "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB",
+// "50 FRAMES/S  PF9 = J1101 pin 4". Switched off at the moment: this function
+// and its call in spectrum_poll() are both commented out. To bring it back,
+// uncomment both (spec_peak_hz and spec_fps are still worked out every frame)
 //static void spec_draw_text(void) {
 //	char text[44];
 //	char *p;
@@ -684,6 +761,8 @@ static void spec_draw_labels(void) {
 //	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
 //}
 
+// Draws the spectrum page's fixed parts (title, axes, labels, BACK) and resets
+// the frame state, so the first frame starts straight away
 static void draw_spectrum_page(void) {
 	static int fft_ready = 0;
 	uint32_t k;
@@ -711,6 +790,7 @@ static void draw_spectrum_page(void) {
 
 	draw_button(&btn_back, "BACK", WHITE, DARK_CYAN);
 
+	// The screen was just cleared, so every bar is at height 0
 	for (k = 0U; k < SPEC_MAX_BARS; k++) {
 		spec_drawn[k] = 0U;
 	}
@@ -723,7 +803,8 @@ static void draw_spectrum_page(void) {
 	spec_text_tick = spec_next_frame;
 }
 
-// Turns the finished block into bars
+// Turns the finished block into bars: FFT, work out the real capture rate, grow
+// or shrink each bar, then find the peak frequency
 static void spec_frame(void) {
 	uint32_t span = capture_span_cycles();
 	uint32_t bars;
@@ -770,6 +851,9 @@ static void spec_frame(void) {
 			peak = k;
 		}
 	}
+	// a, b, c = the levels just left of, at, and just right of the peak bin. A
+	// parabola through those three points tops out shift_q8 / 256 of a bin away
+	// from the peak bin
 	a = spec_db10[peak - 1U];
 	b = spec_db10[peak];
 	c = spec_db10[peak + 1U];
@@ -781,7 +865,11 @@ static void spec_frame(void) {
 	spec_peak_db10 = b;
 }
 
-// Called every pass of the main loop while the spectrum page is up
+// Called every pass of the main loop while the spectrum page is up. It never
+// waits: each call either checks on a block it already asked for, or starts the
+// next frame when its slot comes round, then returns. Two states:
+//   waiting = 1  a block is being filled. When it's ready: FFT, draw, toggle PF9
+//   waiting = 0  idle until the next 20 ms slot, then ask the ISR for a block
 static void spectrum_poll(void) {
 	uint32_t now = dbg_cycles();
 	uint32_t rate;
@@ -826,6 +914,7 @@ static void spectrum_poll(void) {
 	}
 }
 
+// Switches to page p and draws it. Every page change goes through here
 static void show_page(page_t p) {
 	page_t from = page;
 
@@ -856,8 +945,11 @@ static void show_page(page_t p) {
 }
 
 // ---------------------------------------------------------------------------
-// Actions
+// Actions: what the main page's buttons (and PB0/PB1) actually do
 // ---------------------------------------------------------------------------
+
+// A rate button: send the command, update the screen, and move the mixer in or
+// out of the audio path to match
 static void select_rate(rate_t r) {
 	if (r == rate_get()) {
 		return;		// already selected: no command, no redraw
@@ -875,6 +967,8 @@ static void select_rate(rate_t r) {
 	mixer_set_active(r == RATE_FX_8);
 }
 
+// CLKON / CLKOFF: flip the clock board between running and stopped. The rate
+// buttons redraw too, because the selected one turns yellow while stopped
 static void toggle_enable(void) {
 	rate_enable(!rate_is_enabled());
 	draw_status();
@@ -889,6 +983,8 @@ static void send_invalid(void) {
 	draw_status();
 }
 
+// Every tap comes through here, from the touch driver, the debugger hook or a
+// test. Sends it to whichever page is showing
 void ui_touch(uint16_t x, uint16_t y) {
 	rate_t r;
 
@@ -903,6 +999,7 @@ void ui_touch(uint16_t x, uint16_t y) {
 		return;
 	}
 
+	// Main page: check each button in turn
 	for (r = RATE_FX; r < RATE_COUNT; r++) {
 		if (hit(&btn_rate[r], x, y)) {
 			select_rate(r);
@@ -931,12 +1028,13 @@ void ui_touch(uint16_t x, uint16_t y) {
 #define BTN_POLL_CYCLES		(SYSCLK_HZ / 100U)	// sample every 10 ms
 #define BTN_STABLE_POLLS	3U					// 30 ms debounce
 
-static uint32_t btn_idle;
+static uint32_t btn_idle;		// pin levels at start-up = "not pressed"
 static uint32_t btn_state;		// debounced: bit set = pressed
-static uint32_t btn_last_raw;
-static uint32_t btn_count;
-static uint32_t btn_last_poll;
+static uint32_t btn_last_raw;	// reading from the last 10 ms check
+static uint32_t btn_count;		// checks in a row that matched btn_last_raw
+static uint32_t btn_last_poll;	// cycle count of the last check
 
+// Records the idle levels. Assumes nobody is holding a button at power-up
 static void buttons_init(void) {
 	btn_idle = GPIOE->IDR & BTN_MASK;
 	btn_state = 0U;
@@ -954,6 +1052,9 @@ static uint32_t buttons_pressed(void) {
 	}
 	btn_last_poll = dbg_cycles();
 
+	// XOR with the idle levels: a 1 bit now means "different from idle" = pressed.
+	// Any change restarts the count, so a bouncing contact is ignored until it
+	// has held still for 30 ms
 	raw = (GPIOE->IDR ^ btn_idle) & BTN_MASK;
 	if (raw != btn_last_raw) {
 		btn_last_raw = raw;
@@ -972,6 +1073,10 @@ static uint32_t buttons_pressed(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The two functions main.c calls
+// ---------------------------------------------------------------------------
+
+// Once at start-up, after lcd_init() and rate_init()
 void ui_init(void) {
 	// Mixer: filters designed for the nominal fx/8 rate until stats_update()
 	// measures the real one. On only if the clock board is at fx/8
@@ -989,20 +1094,26 @@ void ui_init(void) {
 	show_page(PAGE_MAIN);
 }
 
+// Every pass of the main loop. Each job below returns straight away if it has
+// nothing to do yet, so one pass is usually very quick
 void ui_poll(void) {
 	uint32_t pressed = buttons_pressed();
 	uint16_t tx, ty;
 
+	// A new tap on the screen?
 	if (touch_poll(&tx, &ty)) {
 		ui_touch(tx, ty);
 	}
 
+	// Measured rate and ISR load, every half second, on every page
 	stats_update();
 
+	// Spectrum frames only run while that page is showing
 	if (page == PAGE_SPECTRUM) {
 		spectrum_poll();
 	}
 
+	// PB0 / PB1 backup buttons
 	if (pressed != 0U) {
 		if (page != PAGE_MAIN) {
 			show_page(PAGE_MAIN);				// either button = back
@@ -1013,6 +1124,7 @@ void ui_poll(void) {
 		}
 	}
 
+	// A fake tap written in from the Keil debugger
 	if (ui_test_x != 0xFFFFU) {
 		ui_touch(ui_test_x, ui_test_y);
 		ui_test_x = 0xFFFFU;

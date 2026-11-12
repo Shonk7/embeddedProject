@@ -1,3 +1,16 @@
+// ===========================================================================
+// SystemInit.c: sets the chip's own clocks before main() runs
+// ===========================================================================
+//
+// The STM32 wakes up on its internal 8 MHz oscillator (HSI). We switch it over to
+// the 12 MHz crystal (HSE), multiplied by 6 in the PLL, which gives 72 MHz, the
+// fastest this chip is rated for. Everything in the firmware that turns cycles
+// into time (delays, SPI speeds, measuring the sample rate, the ISR's 180-cycle
+// budget at fx) assumes 72 MHz.
+//
+// This is only the CPU's clock. The audio sample clock comes from our clock board
+// on PF11 and has nothing to do with this file, as the spec requires.
+
 #include "../Headers/stm32f103xe.h"
 #include "clock.h"
 
@@ -5,7 +18,10 @@
 // this is tens of ms, well past crystal startup or PLL lock (200 us)
 #define READY_TIMEOUT	0x10000U
 
-// Get to 72 MHz from either crystal: 12 MHz x 6
+// 12 MHz crystal x 6 = 72 MHz. If the crystal were ever really 16 MHz (the
+// schematic's part number hints at it), this would give 96 MHz, and
+// SystemCoreClockUpdate() couldn't tell because it trusts HSE_HZ. So if timings
+// ever look a third too fast on a scope, check the crystal first
 #define PLL_SETTINGS	RCC_CFGR_PLLMULL6
 
 // CPU speed in Hz. SystemCoreClockUpdate() fills this in from main

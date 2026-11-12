@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+// sampling.h: the glue between the core audio ISR and the Ext A mixer.
+//
+// The ISR in audio.c knows nothing about mixers. It just calls whatever function
+// is in audio_process for each sample. sampling_init() puts sampling_process()
+// there, and that function decides per sample whether the mixer runs.
+//
 // The step between the ADC and the DAC for every sample (installed at start-up).
 // audio.c still does the sampling itself: the external clock edge fires the ISR,
 // which starts the ADC. This module takes each sample the ISR collects and:

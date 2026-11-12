@@ -1,3 +1,24 @@
+// ===========================================================================
+// audio.c: the audio interrupt. This is the heart of the core objective
+// ===========================================================================
+//
+// What happens on every clock edge, in order (see EXTI15_10_IRQHandler below):
+//   1. Clear the interrupt flag and count the edge
+//   2. Write the DAC with the sample we worked out on the previous edge
+//   3. Collect the ADC result started on the previous edge
+//   4. Start the next ADC conversion: this is the sampling instant
+//   5. Process the sample we just collected (passthrough, or the mixer at fx/8),
+//      ready for the DAC on the next edge. Also feed the FFT capture if it's on
+//   6. Check whether the next edge already arrived while we were busy
+//
+// Doing the fixed-time jobs (DAC write, ADC start) first and the variable-time job
+// (processing) last means the sampling and output instants sit at the same delay
+// after every edge, however long the mixer takes. That keeps jitter out of the
+// sample timing, which the spec says is the same as adding noise.
+//
+// The cost is a short pipeline delay: a sample taken on edge n comes out of the
+// DAC on edge n + 2. That's 5 us at fx and 40 us at fx/8, far too short to hear.
+
 #include "audio.h"
 #include "adc.h"
 #include "dac.h"
@@ -5,10 +26,12 @@
 #include "extclk.h"
 #include "capture.h"
 
+// Health counters (see audio.h). Only this file writes them
 volatile uint32_t audio_overruns = 0U;
 volatile uint32_t audio_late_edges = 0U;
 volatile uint32_t audio_max_cycles = 0U;
 
+// The processing hook. 0 = passthrough until sampling_init() installs the mixer path
 audio_process_t volatile audio_process = 0;
 
 // The sample to send on the next edge. Only the ISR touches this
@@ -65,14 +88,17 @@ void EXTI15_10_IRQHandler(void) {
 		process = audio_process;
 		next_output = (process != 0) ? process(code) : code;
 
-		// Stage 7: hand the raw input to the FFT capture, but only while main has
-		// asked for a block. Idle, this is one load and one branch
+		// Stage 7: hand the raw input (before the mixer, because the spec wants the
+		// spectrum of the input) to the FFT capture, but only while the spectrum
+		// page has asked for a block. Idle, this is one load and one branch
 		if (capture_armed != 0U) {
 			capture_push(code);
 		}
 	}
 
-	// A pending flag here means the next edge came before we finished
+	// A pending flag here means the next edge came before we finished. The
+	// hardware remembers one pending edge, so it isn't lost yet, but if this keeps
+	// happening we're over budget and a second edge would be
 	if (EXTI->PR & EXTCLK_PR_FLAG) {
 		audio_late_edges++;
 	}

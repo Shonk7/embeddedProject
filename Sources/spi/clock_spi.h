@@ -3,6 +3,19 @@
 
 #include <stdint.h>
 
+// clock_spi.h: the firmware end of the link to our clock board (Stage 6).
+//
+// The clock board picks its rate from a one-byte command: D1 = fx, D2 = fx/2,
+// D4 = fx/4, D8 = fx/8, E0 = stop, E1 = start. This module shifts one byte out
+// over SPI1 and then pulses the two strobe lines the board needs to latch it and
+// apply it. It doesn't decide which byte to send: that's ui/rate_ctrl.c.
+//
+// For whoever built the clock board: the timing in the transaction list below is
+// exactly what the board sees on its pins, so it's the place to check first if
+// the board ignores us or changes rate at the wrong moment. The link only goes
+// one way (we never read anything back), so the proof that a command worked is
+// the measured rate on the screen, not anything in this file.
+//
 // Sends command bytes to the clock board (Breadboard Build Guide rev 8).
 // Wiring, APE side:
 //   J901 pin 4  PA5  SCLK       -> U4/U5 pin 11
