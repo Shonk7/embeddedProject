@@ -2,6 +2,7 @@
 #define ADC_H
 
 #include "../Headers/stm32f103xe.h"
+#include <stdbool.h>
 
 // The audio jack reaches PA3, which is channel 3. The schematic calls this net ADC2
 #define ADC_AUDIO_CHANNEL	3U
@@ -18,7 +19,7 @@ __STATIC_INLINE void adc_start(void) {
 }
 
 // True once the conversion has finished
-__STATIC_INLINE int adc_is_done(void) {
+__STATIC_INLINE bool adc_is_done(void) {
 	return (ADC1->SR & ADC_SR_EOC) != 0U;
 }
 

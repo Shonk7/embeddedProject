@@ -2,6 +2,7 @@
 #define SAMPLING_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // The step between the ADC and the DAC for every sample (installed at start-up).
 // audio.c still does the sampling itself: the external clock edge fires the ISR,
@@ -20,9 +21,9 @@
 // Call after audio_init(). Plugs sampling_process() into the audio ISR
 void sampling_init(void);
 
-// 1 if sampling_init() has run, so the UI can say whether the mixer path is
+// true if sampling_init() has run, so the UI can say whether the mixer path is
 // installed
-int sampling_is_running(void);
+bool sampling_is_running(void);
 
 // ADC samples within SAMPLING_CLIP_MARGIN codes of 0 or 4095, counted while the
 // mixer runs. A rising count means the input is too loud
