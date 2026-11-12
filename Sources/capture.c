@@ -48,6 +48,11 @@ void capture_start(uint32_t rate_hz) {
 	capture_armed = 1U;
 }
 
+void capture_stop(void) {
+	capture_armed = 0U;		// the ISR stops adding points on its next sample
+	capture_full = 0U;
+}
+
 int capture_ready(void) {
 	if (capture_full == 0U) {
 		return 0;

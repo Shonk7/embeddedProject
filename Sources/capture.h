@@ -38,6 +38,11 @@ extern volatile uint32_t capture_armed;
 // samples go into each point. Main loop only
 void capture_start(uint32_t rate_hz);
 
+// Stops a block part-way and forgets any finished one. Called when the spectrum
+// page closes, so the ISR does no capture work while the page isn't shown.
+// Main loop only
+void capture_stop(void);
+
 // 1 once all 128 points are in
 int capture_ready(void);
 

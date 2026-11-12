@@ -226,9 +226,9 @@ static void show_page(page_t p);
 
 // ---------------------------------------------------------------------------
 // Mixer page (Ext A). Three gain bars: tap a bar to set its gain, 0 to 2 in
-// steps of 0.05 (the white mark is 1.0). The crossovers are fixed for the whole
-// project at 500 Hz and 4 kHz and are only displayed. Two lines of live stats:
-// ISR load, measured rate, late edges, clips
+// steps of 0.05 (the white mark is 1.0). Crossover -/+ buttons move the two
+// cutoffs within +-50 % of 500 Hz and 4 kHz (soft goal); FLAT puts them back.
+// Two lines of live stats: ISR load, measured rate, late edges, clips
 // ---------------------------------------------------------------------------
 #define MIX_STATUS_Y	36U
 #define MIX_ROW_Y0		50U		// top of the first gain row
@@ -245,10 +245,16 @@ static void show_page(page_t p);
 // Gains are kept here in hundredths (100 = 1.00) so the display is exact
 #define GAIN_MAX_H		200U
 #define GAIN_STEP_H		5U		// 0.05 per step
+#define FC1_STEP_HZ		50U		// 250 to 750 Hz in 11 steps
+#define FC2_STEP_HZ		250U	// 2000 to 6000 Hz in 17 steps
 
 // Interrupt entry and exit, which the ISR's own cycle count can't see (Stage 5)
 #define ISR_ENTRY_EXIT_CYCLES	30U
 
+static const box_t btn_fc1_down = {   8, 198,  55, 221 };
+static const box_t btn_fc1_up   = { 184, 198, 231, 221 };
+static const box_t btn_fc2_down = {   8, 226,  55, 249 };
+static const box_t btn_fc2_up   = { 184, 226, 231, 249 };
 static const box_t btn_mix_back = {   8, 272, 115, 303 };
 static const box_t btn_mix_flat = { 124, 272, 231, 303 };
 
@@ -362,16 +368,26 @@ static void draw_mixer_status(void) {
 }
 
 // Fixed crossovers, shown for reference: "500 Hz / 4000 Hz"
-static void draw_crossovers(void) {
-	char text[24];
-	char *p;
+// One crossover value, centred between its - and + buttons
+static void draw_fc_value(uint16_t y, uint32_t hz) {
+	char text[12];
+	uint16_t tw;
 
-	text1x(8U, MIX_FC_LABEL_Y, "CROSSOVERS (FIXED)", LIGHT_GRAY, BLACK);
-	p = put_uint(text, mixer_fc1());
-	p = put_text(p, " Hz / ");
-	p = put_uint(p, mixer_fc2());
-	(void)put_text(p, " Hz");
-	text2x(8U, MIX_FC_LABEL_Y + 16U, text, WHITE, BLACK);
+	(void)put_text(put_uint(text, hz), " Hz");
+	tw = text_len(text) * 12U;
+	lcd_fillRect(56U, y, 183U, y + 23U, BLACK);
+	text2x(56U + (128U - tw) / 2U, y + 4U, text, WHITE, BLACK);
+}
+
+// Top row: low/mid crossover (250 to 750 Hz). Bottom row: mid/high (2 to 6 kHz)
+static void draw_crossovers(void) {
+	text1x(8U, MIX_FC_LABEL_Y, "CROSSOVERS (+-50 %)", LIGHT_GRAY, BLACK);
+	draw_button(&btn_fc1_down, "-", WHITE, NAVY);
+	draw_button(&btn_fc1_up, "+", WHITE, NAVY);
+	draw_button(&btn_fc2_down, "-", WHITE, NAVY);
+	draw_button(&btn_fc2_up, "+", WHITE, NAVY);
+	draw_fc_value(btn_fc1_down.y0, mixer_fc1());
+	draw_fc_value(btn_fc2_down.y0, mixer_fc2());
 }
 
 // "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  CLIP 0"
@@ -422,6 +438,20 @@ static void draw_mixer_page(void) {
 	draw_button(&btn_mix_flat, "FLAT", WHITE, DARK_CYAN);
 }
 
+// New crossovers: redesign the filters (main loop, a few ms), swap them in, then
+// redraw what shows them. mixer_set_crossovers() refuses anything out of range
+static void set_crossovers(uint32_t fc1, uint32_t fc2) {
+	uint32_t b;
+
+	if (mixer_set_crossovers(fc1, fc2, mixer_fs())) {
+		draw_fc_value(btn_fc1_down.y0, mixer_fc1());
+		draw_fc_value(btn_fc2_down.y0, mixer_fc2());
+		for (b = 0U; b < MIXER_BANDS; b++) {
+			draw_gain_row(b);		// the labels show the crossovers
+		}
+	}
+}
+
 // Tap position on a bar -> gain, snapped to 0.05
 static void set_gain_from_x(uint32_t band, uint16_t x) {
 	uint32_t pos = (x > MIX_BAR_X0 + 1U) ? (uint32_t)(x - (MIX_BAR_X0 + 1U)) : 0U;
@@ -452,6 +482,7 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 			mixer_set_gain(b, MIXER_GAIN_ONE);
 			draw_gain_row(b);
 		}
+		set_crossovers(MIXER_FC1_DEFAULT, MIXER_FC2_DEFAULT);
 		return;
 	}
 
@@ -463,6 +494,17 @@ static void mixer_touch(uint16_t x, uint16_t y) {
 			set_gain_from_x(b, x);
 			return;
 		}
+	}
+
+	// Crossover buttons: one step per tap
+	if (hit(&btn_fc1_down, x, y)) {
+		set_crossovers(mixer_fc1() - FC1_STEP_HZ, mixer_fc2());
+	} else if (hit(&btn_fc1_up, x, y)) {
+		set_crossovers(mixer_fc1() + FC1_STEP_HZ, mixer_fc2());
+	} else if (hit(&btn_fc2_down, x, y)) {
+		set_crossovers(mixer_fc1(), mixer_fc2() - FC2_STEP_HZ);
+	} else if (hit(&btn_fc2_up, x, y)) {
+		set_crossovers(mixer_fc1(), mixer_fc2() + FC2_STEP_HZ);
 	}
 }
 
@@ -526,7 +568,7 @@ static void stats_update(void) {
 // more slack per frame than 50 did, so the occasional slow pass (text redraw,
 // stats, many bars changing) no longer pushes a frame into the next slot, and
 // still stays well above 30 at fx, where the ISR takes a big share of the CPU
-#define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 40U)
+#define SPEC_FRAME_CYCLES	(SYSCLK_HZ / 50U)
 #define SPEC_TIMEOUT_CYCLES	(SYSCLK_HZ / 10U)	// a block takes 2.6 ms: 100 ms = no clock
 #define SPEC_TEXT_CYCLES	(SYSCLK_HZ / 2U)	// numbers and labels twice a second
 
@@ -534,6 +576,8 @@ static void stats_update(void) {
 #define SPEC_INFO_Y			38U
 #define SPEC_PEAK_Y			50U
 #define SPEC_FPS_Y			262U
+#define SPEC_YTITLE_Y		50U		// "LEVEL (dB)" above the dB scale
+#define SPEC_XTITLE_Y		262U	// "FREQUENCY (Hz)" under the frequency labels
 
 static int32_t spec_db10[FFT_HALF];
 static uint16_t spec_drawn[SPEC_MAX_BARS];	// bar heights on screen now
@@ -608,40 +652,48 @@ static void spec_draw_labels(void) {
 }
 
 // "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "40 FRAMES/S  PF9 = J1101 pin 4"
-static void spec_draw_text(void) {
-	char text[44];
-	char *p;
-	int32_t db;
+//static void spec_draw_text(void) {
+//	char text[44];
+//	char *p;
+//	int32_t db;
 
-	lcd_fillRect(0U, SPEC_INFO_Y, 239U, SPEC_PEAK_Y + 7U, BLACK);
-	if (spec_fs_hz == 0U) {
-		text_fast(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
-	} else {
-		p = put_text(text, "fs ");
-		p = put_uint(p, spec_fs_hz);
-		p = put_text(p, " Hz  BIN ");
-		p = put_uint(p, (spec_fs_hz + FFT_N / 2U) / FFT_N);
-		p = put_text(p, " Hz  x");
-		(void)put_uint(p, capture_decimation());
-		text_fast(8U, SPEC_INFO_Y, text, WHITE, BLACK);
+//	lcd_fillRect(0U, SPEC_INFO_Y, 239U, SPEC_PEAK_Y + 7U, BLACK);
+//	if (spec_fs_hz == 0U) {
+//		text_fast(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
+//	} else {
+//		p = put_text(text, "fs ");
+//		p = put_uint(p, spec_fs_hz);
+//		p = put_text(p, " Hz  BIN ");
+//		p = put_uint(p, (spec_fs_hz + FFT_N / 2U) / FFT_N);
+//		p = put_text(p, " Hz  x");
+//		(void)put_uint(p, capture_decimation());
+//		text_fast(8U, SPEC_INFO_Y, text, WHITE, BLACK);
 
-		db = (spec_peak_db10 < 0) ? -spec_peak_db10 : spec_peak_db10;
-		p = put_text(text, "PEAK ");
-		p = put_uint(p, spec_peak_hz);
-		p = put_text(p, (spec_peak_db10 < 0) ? " Hz  -" : " Hz  ");
-		p = put_uint(p, (uint32_t)(db / 10));
-		(void)put_text(p, " dB");
-		text_fast(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
-	}
+//		db = (spec_peak_db10 < 0) ? -spec_peak_db10 : spec_peak_db10;
+//		p = put_text(text, "PEAK ");
+//		p = put_uint(p, spec_peak_hz);
+//		p = put_text(p, (spec_peak_db10 < 0) ? " Hz  -" : " Hz  ");
+//		p = put_uint(p, (uint32_t)(db / 10));
+//		(void)put_text(p, " dB");
+//		text_fast(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
+//	}
 
-	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
-	p = put_uint(text, spec_fps);
-	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
-	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
-}
+//	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
+//	p = put_uint(text, spec_fps);
+//	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
+//	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
+//}
 
 static void draw_spectrum_page(void) {
+	static int fft_ready = 0;
 	uint32_t k;
+
+	// FFT twiddle, window and bit-reverse tables: built once, the first time the
+	// spectrum page opens (double maths, a few ms), not at start-up
+	if (!fft_ready) {
+		fft_init();
+		fft_ready = 1;
+	}
 
 	lcd_fillScreen(BLACK);
 	draw_title("SPECTRUM");
@@ -650,6 +702,10 @@ static void draw_spectrum_page(void) {
 	text1x(2U, SPEC_TOP, "0", LIGHT_GRAY, BLACK);
 	text1x(2U, SPEC_TOP + SPEC_H / 2U - 4U, "-40", LIGHT_GRAY, BLACK);
 	text1x(2U, SPEC_BOT - 7U, "-80", LIGHT_GRAY, BLACK);
+
+	// Axis titles. Drawn once here, so they cost nothing per frame
+	text1x(2U, SPEC_YTITLE_Y, "LEVEL (dB)", WHITE, BLACK);
+	text1x((240U - 14U * 6U) / 2U, SPEC_XTITLE_Y, "FREQUENCY (Hz)", WHITE, BLACK);
 	lcd_line(SPEC_X0 - 2U, SPEC_TOP, SPEC_X0 - 2U, SPEC_BOT, DARK_GRAY);
 	lcd_line(SPEC_X0 - 2U, SPEC_BOT + 1U, 239U, SPEC_BOT + 1U, DARK_GRAY);
 
@@ -764,7 +820,7 @@ static void spectrum_poll(void) {
 			spec_fps = (uint32_t)(((uint64_t)spec_frames * SYSCLK_HZ) / (now - spec_text_tick));
 			spec_frames = 0U;
 			spec_text_tick = now;
-			spec_draw_text();
+			//spec_draw_text();
 			spec_draw_labels();
 		}
 	}
@@ -774,6 +830,14 @@ static void show_page(page_t p) {
 	page_t from = page;
 
 	page = p;
+
+	// Leaving the spectrum page: stop the capture, so nothing spectrum-related
+	// runs in the ISR or the main loop until the page is opened again
+	if ((from == PAGE_SPECTRUM) && (p != PAGE_SPECTRUM)) {
+		capture_stop();
+		spec_waiting = 0;
+	}
+
 	switch (p) {
 	case PAGE_MIXER:
 		draw_mixer_page();
@@ -916,8 +980,8 @@ void ui_init(void) {
 	stat_last_tick = dbg_cycles();
 	stat_last_edges = extclk_edges;
 
-	// Spectrum page: FFT tables (double maths, once) and the frame-rate pin
-	fft_init();
+	// Spectrum page: only the frame-rate pin here. The FFT tables are built the
+	// first time the page opens (draw_spectrum_page)
 	frame_pin_init();
 
 	touch_init();
