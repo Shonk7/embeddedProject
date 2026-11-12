@@ -1,4 +1,5 @@
 #include "../../Headers/stm32f103xe.h"
+#include <stdbool.h>
 #include "../../LCD/lcd_grph.h"
 #include "../../LCD/font5x7.h"
 #include "../../LCD/ili9341.h"
@@ -145,7 +146,7 @@ static void draw_title(const char *title) {
 	text2x((240U - tw) / 2U, 8U, title, WHITE, NAVY);
 }
 
-static int hit(const box_t *b, uint16_t x, uint16_t y) {
+static bool hit(const box_t *b, uint16_t x, uint16_t y) {
 	return (x >= b->x0) && (x <= b->x1) && (y >= b->y0) && (y <= b->y1);
 }
 

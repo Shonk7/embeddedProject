@@ -57,6 +57,6 @@ void sampling_init(void) {
 	audio_process = sampling_process;	// one aligned write: the ISR sees all or nothing
 }
 
-int sampling_is_running(void) {
+bool sampling_is_running(void) {
 	return audio_process == sampling_process;
 }

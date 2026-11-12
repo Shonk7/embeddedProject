@@ -2,6 +2,7 @@
 #define TOUCH_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Resistive touch controller U902 on SPI1 (XPT2046 / ADS7843 / TSC2046 family -
 // all use the same commands). Pen-down signal on PA0 (J501 must be on the LEFT)
@@ -22,20 +23,20 @@
 
 void touch_init(void);
 
-// 1 while the panel is being pressed (PENIRQ low)
-int touch_is_down(void);
+// true while the panel is being pressed (PENIRQ low)
+bool touch_is_down(void);
 
-// Reads raw X and Y (8 samples each, outliers dropped). Returns 0 if the
+// Reads raw X and Y (8 samples each, outliers dropped). Returns false if the
 // samples were too noisy or the pen lifted, so the result is unusable
-int touch_read_raw(uint16_t *raw_x, uint16_t *raw_y);
+bool touch_read_raw(uint16_t *raw_x, uint16_t *raw_y);
 
 // Raw reading -> screen pixels (x 0-239, y 0-319, portrait), using the
 // calibration above
 void touch_map(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y);
 
-// Main loop only. Returns 1 exactly once per new press, with its position.
+// Main loop only. Returns true exactly once per new press, with its position.
 // A press must be released before the next one counts
-int touch_poll(uint16_t *x, uint16_t *y);
+bool touch_poll(uint16_t *x, uint16_t *y);
 
 
 // Last raw reading, for the Keil Watch window
