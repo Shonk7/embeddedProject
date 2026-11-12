@@ -10,8 +10,8 @@ extern volatile uint32_t audio_late_edges;	// edges that arrived while the ISR w
 extern volatile uint32_t audio_max_cycles;	// longest ISR so far, in CPU cycles
 
 // Optional per-sample processing. 0 (the default) = plain passthrough, ADC code
-// straight to the DAC. Sampling/sampling.c installs its function here in
-// ACTIVE_TEST 10, and every other test leaves it at 0. The function gets the raw
+// straight to the DAC. Sampling/sampling.c installs its function here at
+// start-up (sampling_init in main.c). The function gets the raw
 // ADC code (0 to 4095) and returns the DAC code (0 to 4095)
 typedef uint32_t (*audio_process_t)(uint32_t adc_code);
 extern audio_process_t volatile audio_process;

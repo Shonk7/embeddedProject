@@ -3,6 +3,7 @@
 #include "dac.h"
 #include "debug.h"
 #include "extclk.h"
+#include "capture.h"
 
 volatile uint32_t audio_overruns = 0U;
 volatile uint32_t audio_late_edges = 0U;
@@ -58,11 +59,17 @@ void EXTI15_10_IRQHandler(void) {
 	// the same time after the edge
 	adc_start();
 
-	// Passthrough, or the processing installed in audio_process (ACTIVE_TEST 10).
+	// Passthrough, or the processing installed in audio_process (Sampling/sampling.c).
 	// The result goes to the DAC on the next edge
 	if (have_sample) {
 		process = audio_process;
 		next_output = (process != 0) ? process(code) : code;
+
+		// Stage 7: hand the raw input to the FFT capture, but only while main has
+		// asked for a block. Idle, this is one load and one branch
+		if (capture_armed != 0U) {
+			capture_push(code);
+		}
 	}
 
 	// A pending flag here means the next edge came before we finished
