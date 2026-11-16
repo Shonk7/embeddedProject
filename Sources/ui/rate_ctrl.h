@@ -2,6 +2,7 @@
 #define RATE_CTRL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // fx = 352 kHz + average of the zID endings (08, 67, 72, 42) = 352 + 47.25
 #define FX_HZ	399250U
@@ -40,7 +41,7 @@ void rate_enable(int on);
 void rate_send_invalid(void);
 
 rate_t rate_get(void);
-int rate_is_enabled(void);
+bool rate_is_enabled(void);
 uint32_t rate_hz(rate_t rate);
 const char *rate_label(rate_t rate);		// "399.25 kHz"
 const char *rate_short_label(rate_t rate);	// "399 kHz"

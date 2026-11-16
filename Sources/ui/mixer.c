@@ -90,13 +90,13 @@ static void design_pair(coef_t *lp, coef_t *hp, double fc, double fs) {
 	hp->a2 = lp->a2;
 }
 
-int mixer_set_crossovers(uint32_t fc1, uint32_t fc2, uint32_t fs) {
+bool mixer_set_crossovers(uint32_t fc1, uint32_t fc2, uint32_t fs) {
 	uint32_t spare = live_bank ^ 1U;
 
 	if ((fc1 < MIXER_FC1_MIN) || (fc1 > MIXER_FC1_MAX) ||
 	    (fc2 < MIXER_FC2_MIN) || (fc2 > MIXER_FC2_MAX) ||
 	    (fs < 4U * fc2)) {
-		return 0;
+		return false;
 	}
 
 	// Fill the bank the ISR isn't using, then switch to it in one write
@@ -107,7 +107,7 @@ int mixer_set_crossovers(uint32_t fc1, uint32_t fc2, uint32_t fs) {
 	fc1_hz = fc1;
 	fc2_hz = fc2;
 	fs_used_hz = fs;
-	return 1;
+	return true;
 }
 
 void mixer_init(uint32_t fs_hz) {

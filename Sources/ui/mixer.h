@@ -2,6 +2,7 @@
 #define MIXER_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Extension A: 3-band audio mixer. Design and test bench: mixer_design.m
 //
@@ -47,8 +48,8 @@ extern volatile uint32_t mixer_on;
 void mixer_init(uint32_t fs_hz);
 
 // Works out new coefficients (slow, uses double maths) and swaps them in at once.
-// Returns 0 and changes nothing if a value is out of range
-int mixer_set_crossovers(uint32_t fc1_hz, uint32_t fc2_hz, uint32_t fs_hz);
+// Returns false and changes nothing if a value is out of range
+bool mixer_set_crossovers(uint32_t fc1_hz, uint32_t fc2_hz, uint32_t fs_hz);
 
 void mixer_set_gain(uint32_t band, uint32_t gain_q14);
 uint32_t mixer_get_gain(uint32_t band);
@@ -59,7 +60,7 @@ uint32_t mixer_fs(void);
 // On at fx/8 only. Turning it on clears the filters' memory first
 void mixer_set_active(int on);
 
-static inline int mixer_is_active(void) {
+static inline bool mixer_is_active(void) {
 	return mixer_on != 0U;
 }
 

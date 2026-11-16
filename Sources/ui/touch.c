@@ -80,7 +80,7 @@ static uint16_t read_channel(uint8_t cmd) {
 }
 
 // Average of the samples with the highest and lowest dropped
-static int filter(const uint16_t *s, uint16_t *out) {
+static bool filter(const uint16_t *s, uint16_t *out) {
 	uint32_t i, sum = 0U;
 	uint16_t lo = 0xFFFFU, hi = 0U;
 
@@ -90,10 +90,10 @@ static int filter(const uint16_t *s, uint16_t *out) {
 		if (s[i] > hi) { hi = s[i]; }
 	}
 	if (((hi - lo) > MAX_SPREAD) || (lo < RAW_MIN_VALID) || (hi > RAW_MAX_VALID)) {
-		return 0;
+		return false;
 	}
 	*out = (uint16_t)((sum - lo - hi) / (SAMPLES - 2U));
-	return 1;
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,14 +131,14 @@ void touch_init(void) {
 	spi_release();
 }
 
-int touch_is_down(void) {
+bool touch_is_down(void) {
 	return (GPIOA->IDR & 0x1U) == 0U;
 }
 
-int touch_read_raw(uint16_t *raw_x, uint16_t *raw_y) {
+bool touch_read_raw(uint16_t *raw_x, uint16_t *raw_y) {
 	uint16_t sx[SAMPLES], sy[SAMPLES];
 	uint32_t i;
-	int ok;
+	bool ok;
 
 	spi_take();
 	cs_low();
@@ -186,29 +186,29 @@ static uint32_t down_count;
 static uint32_t up_count;
 static int pressed;
 
-int touch_poll(uint16_t *x, uint16_t *y) {
+bool touch_poll(uint16_t *x, uint16_t *y) {
 	uint16_t rx, ry;
 
 	if ((dbg_cycles() - last_poll) < POLL_CYCLES) {
-		return 0;
+		return false;
 	}
 	last_poll = dbg_cycles();
 
 	if (!pressed) {
 		if (!touch_is_down()) {
 			down_count = 0U;
-			return 0;
+			return false;
 		}
 		if (++down_count < DOWN_POLLS) {
-			return 0;
+			return false;
 		}
 		if (!touch_read_raw(&rx, &ry)) {
-			return 0;			// noisy: try again next poll
+			return false;			// noisy: try again next poll
 		}
 		pressed = 1;
 		up_count = 0U;
 		touch_map(rx, ry, x, y);
-		return 1;
+		return true;
 	}
 
 	if (touch_is_down()) {
@@ -217,5 +217,5 @@ int touch_poll(uint16_t *x, uint16_t *y) {
 		pressed = 0;
 		down_count = 0U;
 	}
-	return 0;
+	return false;
 }

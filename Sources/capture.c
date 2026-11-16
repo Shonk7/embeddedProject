@@ -53,14 +53,14 @@ void capture_stop(void) {
 	capture_full = 0U;
 }
 
-int capture_ready(void) {
+bool capture_ready(void) {
 	if (capture_full == 0U) {
-		return 0;
+		return false;
 	}
 	// The ISR filled the buffer before setting capture_full. The barrier stops the
 	// compiler reading the buffer early, before it has checked the flag
 	__DMB();
-	return 1;
+	return true;
 }
 
 const uint16_t *capture_data(void) {

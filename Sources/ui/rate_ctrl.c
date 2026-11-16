@@ -85,8 +85,8 @@ rate_t rate_get(void) {
 	return current_rate;
 }
 
-int rate_is_enabled(void) {
-	return clock_enabled;
+bool rate_is_enabled(void) {
+	return clock_enabled != 0;
 }
 
 uint32_t rate_hz(rate_t rate) {

@@ -2,6 +2,7 @@
 #define CAPTURE_H
 
 #include "../Headers/stm32f103xe.h"
+#include <stdbool.h>
 
 // Stage 7: grabs blocks of input samples for the FFT (Ext B).
 //
@@ -43,10 +44,10 @@ void capture_start(uint32_t rate_hz);
 // Main loop only
 void capture_stop(void);
 
-// 1 once all 128 points are in
-int capture_ready(void);
+// true once all 128 points are in
+bool capture_ready(void);
 
-// The block, oldest point first. Only valid while capture_ready() is 1
+// The block, oldest point first. Only valid while capture_ready() is true
 const uint16_t *capture_data(void);
 
 // Samples added up per point in the last block (1, 2, 4 or 8)

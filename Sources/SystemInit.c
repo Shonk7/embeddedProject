@@ -1,5 +1,6 @@
 #include "../Headers/stm32f103xe.h"
 #include "clock.h"
+#include <stdbool.h>
 
 // How many times to check a ready flag before giving up. On the 8 MHz boot clock
 // this is tens of ms, well past crystal startup or PLL lock (200 us)
@@ -11,17 +12,17 @@
 // CPU speed in Hz. SystemCoreClockUpdate() fills this in from main
 uint32_t SystemCoreClock = HSI_HZ;
 
-// Polls a register until (*reg & mask) == value. Returns 0 on timeout, so a dead
+// Polls a register until (*reg & mask) == value. Returns false on timeout, so a dead
 // crystal can't hang the board
-static int wait_for(__IO uint32_t *reg, uint32_t mask, uint32_t value) {
+static bool wait_for(__IO uint32_t *reg, uint32_t mask, uint32_t value) {
 	uint32_t i;
 
 	for (i = 0U; i < READY_TIMEOUT; i++) {
 		if ((*reg & mask) == value) {
-			return 1;
+			return true;
 		}
 	}
-	return 0;
+	return false;
 }
 
 // Switches the chip from the 8 MHz boot clock to 72 MHz. Reset_Handler calls this
