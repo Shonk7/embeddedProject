@@ -33,6 +33,10 @@ static const box_t btn_invalid  = { 124, 224, 231, 263 };	// right half: sends 0
 static const box_t btn_mixer    = {   8, 272, 115, 303 };
 static const box_t btn_spectrum = { 124, 272, 231, 303 };
 static const box_t btn_back     = {   8, 272, 231, 303 };
+static const box_t btn_health   = {   0, 305, 239, 319 };	// main page stats line: tap = zero counters
+
+// Bottom line of the main page: measured rate and the dropped/repeated sample counters
+#define HEALTH_MAIN_Y	308U
 
 #define STATUS_X0	8U
 #define STATUS_Y0	40U
@@ -46,6 +50,8 @@ typedef enum {
 } page_t;
 
 static page_t page = PAGE_MAIN;
+
+static void draw_health(uint16_t y);
 
 volatile uint16_t ui_test_x = 0xFFFFU;
 volatile uint16_t ui_test_y = 0U;
@@ -219,8 +225,8 @@ static void draw_main_page(void) {
 	draw_button(&btn_mixer, "MIXER", WHITE, DARK_CYAN);
 	draw_button(&btn_spectrum, "SPECTRUM", WHITE, DARK_CYAN);
 
-	// Backup controls (touch also works)
-	text1x(8U, 308U, "PB0: next rate  PB1: start/stop", DARK_GRAY, BLACK);
+	// Measured rate and the no-dropped / no-repeated sample counters
+	draw_health(HEALTH_MAIN_Y);
 }
 
 static void show_page(page_t p);
@@ -291,6 +297,41 @@ static char *put_text(char *p, const char *s) {
 	}
 	*p = '\0';
 	return p;
+}
+
+// Evidence for no dropped and no repeated samples,
+// e.g. "fs 49906 Hz  LATE 0  OVR 0". fs is measured from the clock edges, not
+// the selected rate. LATE counts edges that arrived while the ISR was still
+// running (the EXTI pending bit holds only one, so a lost edge needs a LATE
+// first). OVR counts conversions not finished by the next edge (the DAC would
+// repeat the old sample). Green while both are 0
+static void draw_health(uint16_t y) {
+	char text[44];
+	char *p;
+	uint32_t late = audio_late_edges;
+	uint32_t ovr = audio_overruns;
+
+	lcd_fillRect(0U, y, 239U, y + 7U, BLACK);
+	if (stat_rate_hz == 0U) {
+		text_fast(8U, y, "NO CLOCK", LIGHT_GRAY, BLACK);
+		return;
+	}
+	p = put_text(text, "fs ");
+	p = put_uint(p, stat_rate_hz);
+	p = put_text(p, " Hz  LATE ");
+	p = put_uint(p, late);
+	p = put_text(p, "  OVR ");
+	(void)put_uint(p, ovr);
+	text_fast(8U, y, text, ((late | ovr) == 0U) ? GREEN : RED, BLACK);
+}
+
+// Tap the stats line on the main page: zero the counters, so each rate can be
+// shown starting from 0 (e.g. straight after a rate change)
+static void reset_health(void) {
+	audio_late_edges = 0U;
+	audio_overruns = 0U;
+	sampling_clips = 0U;
+	draw_health(HEALTH_MAIN_Y);
 }
 
 // Hundredths -> "1.25"
@@ -391,7 +432,7 @@ static void draw_crossovers(void) {
 	draw_fc_value(btn_fc2_down.y0, mixer_fc2());
 }
 
-// "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  CLIP 0"
+// "ISR 412/1443 cycles = 28%" and "fs 49906 Hz  LATE 0  OVR 0  CLIP 0"
 static void draw_mixer_stats(void) {
 	char text[48];
 	char *p;
@@ -419,6 +460,8 @@ static void draw_mixer_stats(void) {
 	p = put_uint(p, stat_rate_hz);
 	p = put_text(p, " Hz  LATE ");
 	p = put_uint(p, audio_late_edges);
+	p = put_text(p, "  OVR ");
+	p = put_uint(p, audio_overruns);
 	p = put_text(p, "  CLIP ");
 	(void)put_uint(p, sampling_clips);
 	text1x(8U, MIX_STATS_Y + 10U, text, WHITE, BLACK);
@@ -545,7 +588,10 @@ static void stats_update(void) {
 
 	if (page == PAGE_MIXER) {
 		draw_mixer_stats();
+	} else if (page == PAGE_MAIN) {
+		draw_health(HEALTH_MAIN_Y);
 	}
+	// The spectrum page draws its own line inside spectrum_poll, between frames
 }
 
 // ---------------------------------------------------------------------------
@@ -575,8 +621,7 @@ static void stats_update(void) {
 
 #define SPEC_LABEL_Y		(SPEC_BOT + 4U)
 #define SPEC_INFO_Y			38U
-#define SPEC_PEAK_Y			50U
-#define SPEC_FPS_Y			262U
+#define SPEC_FPS_Y			308U	// under the BACK button
 #define SPEC_YTITLE_Y		50U		// "LEVEL (dB)" above the dB scale
 #define SPEC_XTITLE_Y		262U	// "FREQUENCY (Hz)" under the frequency labels
 
@@ -652,38 +697,19 @@ static void spec_draw_labels(void) {
 	}
 }
 
-// "fs 49906 Hz  BIN 390 Hz", "PEAK 1015 Hz  -6 dB", "40 FRAMES/S  PF9 = J1101 pin 4"
-//static void spec_draw_text(void) {
-//	char text[44];
-//	char *p;
-//	int32_t db;
+// Twice a second: the no-dropped-samples line at the top (B.1 req 3) and the
+// frame rate under the BACK button (B.1 req 2, also on PF9 for the scope)
+static void spec_draw_text(void) {
+	char text[44];
+	char *p;
 
-//	lcd_fillRect(0U, SPEC_INFO_Y, 239U, SPEC_PEAK_Y + 7U, BLACK);
-//	if (spec_fs_hz == 0U) {
-//		text_fast(8U, SPEC_INFO_Y, "NO CLOCK: no samples coming in", RED, BLACK);
-//	} else {
-//		p = put_text(text, "fs ");
-//		p = put_uint(p, spec_fs_hz);
-//		p = put_text(p, " Hz  BIN ");
-//		p = put_uint(p, (spec_fs_hz + FFT_N / 2U) / FFT_N);
-//		p = put_text(p, " Hz  x");
-//		(void)put_uint(p, capture_decimation());
-//		text_fast(8U, SPEC_INFO_Y, text, WHITE, BLACK);
+	draw_health(SPEC_INFO_Y);
 
-//		db = (spec_peak_db10 < 0) ? -spec_peak_db10 : spec_peak_db10;
-//		p = put_text(text, "PEAK ");
-//		p = put_uint(p, spec_peak_hz);
-//		p = put_text(p, (spec_peak_db10 < 0) ? " Hz  -" : " Hz  ");
-//		p = put_uint(p, (uint32_t)(db / 10));
-//		(void)put_text(p, " dB");
-//		text_fast(8U, SPEC_PEAK_Y, text, YELLOW, BLACK);
-//	}
-
-//	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
-//	p = put_uint(text, spec_fps);
-//	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
-//	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
-//}
+	lcd_fillRect(0U, SPEC_FPS_Y, 239U, SPEC_FPS_Y + 7U, BLACK);
+	p = put_uint(text, spec_fps);
+	(void)put_text(p, " FRAMES/S  PF9 = J1101 pin 4");
+	text_fast(8U, SPEC_FPS_Y, text, (spec_fps >= 30U) ? GREEN : RED, BLACK);
+}
 
 static void draw_spectrum_page(void) {
 	static int fft_ready = 0;
@@ -821,7 +847,7 @@ static void spectrum_poll(void) {
 			spec_fps = (uint32_t)(((uint64_t)spec_frames * SYSCLK_HZ) / (now - spec_text_tick));
 			spec_frames = 0U;
 			spec_text_tick = now;
-			//spec_draw_text();
+			spec_draw_text();
 			spec_draw_labels();
 		}
 	}
@@ -838,6 +864,10 @@ static void show_page(page_t p) {
 		capture_stop();
 		spec_waiting = 0;
 	}
+
+	// The main page must pass audio through unprocessed (spec p.4 req 3), so the
+	// mixer only runs on its own page, and only at fx/8 where it fits the budget
+	mixer_set_active((p == PAGE_MIXER) && (rate_get() == RATE_FX_8));
 
 	switch (p) {
 	case PAGE_MIXER:
@@ -873,7 +903,8 @@ static void select_rate(rate_t r) {
 	rate_set(r);
 	draw_status();
 	draw_rate_buttons();
-	mixer_set_active(r == RATE_FX_8);
+	// Rates are only chosen on the main page, where the audio is plain
+	// passthrough, so the mixer stays off here. show_page turns it on
 }
 
 static void toggle_enable(void) {
@@ -918,6 +949,8 @@ void ui_touch(uint16_t x, uint16_t y) {
 		show_page(PAGE_MIXER);
 	} else if (hit(&btn_spectrum, x, y)) {
 		show_page(PAGE_SPECTRUM);
+	} else if (hit(&btn_health, x, y)) {
+		reset_health();
 	}
 }
 
@@ -976,8 +1009,7 @@ static uint32_t buttons_pressed(void) {
 void ui_init(void) {
 	// Mixer: filters designed for the nominal fx/8 rate until stats_update()
 	// measures the real one. On only if the clock board is at fx/8
-	mixer_init(rate_hz(RATE_FX_8));
-	mixer_set_active(rate_get() == RATE_FX_8);
+	mixer_init(rate_hz(RATE_FX_8));		// off until the mixer page opens (show_page)
 	stat_last_tick = dbg_cycles();
 	stat_last_edges = extclk_edges;
 
